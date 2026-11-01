@@ -65,11 +65,16 @@ fun BlueCard(modifier: Modifier = Modifier, delay: Int = 0, content: @Composable
 @Composable
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, brush: Brush = BtnBrush, onClick: () -> Unit) {
     val shape = RoundedCornerShape(18.dp)
+    val bg = if (enabled) brush else Brush.linearGradient(listOf(Color(0xFF8FB9D2), Color(0xFF7FA9C2)))
     Box(
-        modifier.height(50.dp).bounceClick(enabled, onClick).shadow(if (enabled) 12.dp else 0.dp, shape, ambientColor = Sky800, spotColor = Sky800)
-            .clip(shape).background(brush).glossy(18.dp).shine().alpha(if (enabled) 1f else .4f),
+        modifier.height(50.dp).bounceClick(enabled, onClick)
+            .shadow(if (enabled) 10.dp else 0.dp, shape, ambientColor = Sky800, spotColor = Sky800)
+            .clip(shape).background(bg),
         contentAlignment = Alignment.Center,
-    ) { Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+    ) {
+        if (enabled) Box(Modifier.fillMaxWidth().height(22.dp).align(Alignment.TopCenter).background(Brush.verticalGradient(listOf(Color.White.copy(alpha = .24f), Color.Transparent))))
+        Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    }
 }
 
 @Composable
@@ -139,10 +144,14 @@ fun ScreenBox(content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 fun Field(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, numeric: Boolean = false, password: Boolean = false, enabled: Boolean = true, suffix: String? = null) {
+    var show by remember { mutableStateOf(false) }
     OutlinedTextField(
         value, onChange, modifier.fillMaxWidth(), enabled = enabled, singleLine = true, label = { Text(label) },
         suffix = suffix?.let { { Text(it) } },
-        visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        trailingIcon = if (password) ({
+            IconButton({ show = !show }) { Ico(if (show) Ic.eyeOff else Ic.eye, size = 22.dp, tint = Slate) }
+        }) else null,
+        visualTransformation = if (password && !show) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
             keyboardType = if (numeric) androidx.compose.ui.text.input.KeyboardType.Number else if (password) androidx.compose.ui.text.input.KeyboardType.Password else androidx.compose.ui.text.input.KeyboardType.Text),
         shape = RoundedCornerShape(16.dp),

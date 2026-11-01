@@ -54,7 +54,8 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
         when (it) {
             is SessionStatus.Authenticated -> AuthState.In
             is SessionStatus.Initializing -> AuthState.Loading
-            else -> AuthState.Out
+            // নেট না থাকলে সেশন নতুন করা যায় না, কিন্তু ফোনে সেশন থাকলে লগইন করা ধরা হয়
+            else -> if (supabase.auth.currentSessionOrNull() != null) AuthState.In else AuthState.Out
         }
     }
     fun email(): String? = supabase.auth.currentUserOrNull()?.email
@@ -85,7 +86,7 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
             if (sync().isFailure) throw AppError("সিঙ্ক শেষ হয়নি, ইন্টারনেট দেখে আবার চেষ্টা করুন")
             supabase.auth.signOut()
             ed.clear(); fd.clear(); kd.clear()
-        } else kd.remove("guest")
+        } else { kd.remove("guest"); kd.remove("signed") }
     }
 
     // ---------- নিয়ম ----------

@@ -81,6 +81,7 @@ object Ic {
     val edit = "M4 20 h4 L19 9 l-4 -4 L4 16 z M13 7 l4 4"
     val lock = "M7 11 h10 a2 2 0 0 1 2 2 v6 a2 2 0 0 1 -2 2 H7 a2 2 0 0 1 -2 -2 v-6 a2 2 0 0 1 2 -2 z M8 11 V8 a4 4 0 0 1 8 0 v3"
     val eye = "M2 12 s4 -7 10 -7 s10 7 10 7 s-4 7 -10 7 s-10 -7 -10 -7 z " + circle(12, 12, 3)
+    val eyeOff = "M2 12 s4 -7 10 -7 s10 7 10 7 s-4 7 -10 7 s-10 -7 -10 -7 z " + circle(12, 12, 3) + "M4 4 l16 16"
     val mail = "M6 5 h12 a3 3 0 0 1 3 3 v8 a3 3 0 0 1 -3 3 H6 a3 3 0 0 1 -3 -3 V8 a3 3 0 0 1 3 -3 z M3 8 l9 6 l9 -6"
     val user = circle(12, 8, 4) + "M4 21 a8 8 0 0 1 16 0"
     val key = circle(8, 15, 4) + "M11 12 l9 -9 M16 7 l3 3"

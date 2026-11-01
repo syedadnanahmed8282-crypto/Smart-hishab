@@ -170,7 +170,7 @@ private fun HomeBody(vm: AppVm, nav: NavHostController, f: FolderE, es: List<Ent
             Text("কাজ ${Fmt.bn(t.work)} দিন", Modifier.clip(CircleShape).background(Color(0xFFD1FAE5)).padding(horizontal = 9.dp, vertical = 3.dp), color = Green, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text("বন্ধ ${Fmt.bn(t.off)} দিন", Modifier.clip(CircleShape).background(Color(0xFFFFE4E6)).padding(horizontal = 9.dp, vertical = 3.dp), color = Rose, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
-            TextButton({ nav.navigate("history") }) { Text("সব দেখুন", fontWeight = FontWeight.SemiBold) }
+            TextButton({ nav.goTab("history") }) { Text("সব দেখুন", fontWeight = FontWeight.SemiBold) }
         }
         if (es.isEmpty()) Text("এখনও কোনো হিসাব নেই। নিচের + বাটনে চাপুন।", color = Slate, fontSize = 14.sp)
         es.take(3).forEachIndexed { i, e -> EntryRow(e, null, Modifier.riseIn(2 + i)) }

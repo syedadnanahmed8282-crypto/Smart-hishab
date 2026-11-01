@@ -120,7 +120,7 @@ fun FoldersScreen(vm: AppVm, nav: NavHostController) {
                             IconButton({ menuFor = f.id }) { Ico(Ic.more, size = 22.dp, tint = Slate, sw = 3.4f) }
                             DropdownMenu(menuFor == f.id, { menuFor = null }) {
                                 DropdownMenuItem({ Text("নাম বদলান") }, { menuFor = null; rename = f })
-                                DropdownMenuItem({ Text("রিপোর্ট দেখুন") }, { menuFor = null; vm.select(f.id); nav.navigate("report") })
+                                DropdownMenuItem({ Text("রিপোর্ট দেখুন") }, { menuFor = null; vm.select(f.id); nav.goTab("report") })
                                 if (f.closed) DropdownMenuItem({ Text("আবার চালু করুন") }, { menuFor = null; vm.reopenFolder(f.id) })
                                 else DropdownMenuItem({ Text("এই চক্র শেষ করুন", color = Rose) }, { menuFor = null; closing = f })
                                 HorizontalDivider()

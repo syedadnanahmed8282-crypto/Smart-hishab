@@ -17,7 +17,9 @@ class AppVm(val repo: Repo) : ViewModel() {
     val entries = repo.entries.stateIn(viewModelScope, eager, emptyList())
     private val currentId = repo.kv("folder").stateIn(viewModelScope, eager, null)
     val viewer = repo.kv("viewer").map { it == "1" }.stateIn(viewModelScope, eager, false)
-    val guest = repo.kv("guest").map { it == "1" }.stateIn(viewModelScope, eager, false)
+    // null = ফোন থেকে এখনও পড়া হয়নি
+    val guest = repo.kv("guest").map<String?, Boolean?> { it == "1" }.stateIn(viewModelScope, eager, null)
+    val signedLocal = repo.kv("signed").map<String?, Boolean?> { it == "1" }.stateIn(viewModelScope, eager, null)
     val lastSync = repo.kv("last_sync").stateIn(viewModelScope, eager, null)
     val auth = repo.authState.stateIn(viewModelScope, eager, AuthState.Loading)
 
@@ -38,6 +40,7 @@ class AppVm(val repo: Repo) : ViewModel() {
             auth.collect {
                 realtime?.cancel()
                 if (it == AuthState.In) {
+                    repo.setKv("signed", "1")
                     sync()
                     realtime = repo.startRealtime(viewModelScope)
                 }
