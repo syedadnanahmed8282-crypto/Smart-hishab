@@ -1,0 +1,6 @@
+{
+  "name": "স্মার্ট হিসাব",
+  "description": "পিস-রেট কাজের দৈনিক হিসাবের নেটিভ Android অ্যাপ - স্মার্ট হিসাব (Smart Hisab)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
