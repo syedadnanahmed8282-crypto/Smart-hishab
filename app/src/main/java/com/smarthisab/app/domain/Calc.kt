@@ -41,52 +41,145 @@ object Fmt {
 
 fun incomeOf(e: EntryE): Double = e.quantity * e.rate / 100.0
 
-data class Totals(val days: Int, val work: Int, val off: Int, val pieces: Long, val income: Double, val expense: Double) {
+data class Totals(
+    val days: Int,
+    val work: Int,
+    val off: Int,
+    val pieces: Long,
+    val income: Double,
+    val expense: Double,
+) {
     val profit get() = income - expense
     val avgIncome get() = income / max(1, days)
     val avgExpense get() = expense / max(1, days)
-    val avgPieces get() = pieces.toDouble() / max(1, days)
+    // Production averages must use actual working days, not all entry days:
+    val avgPieces get() = pieces.toDouble() / max(1, work)
     val avgPiecesPerWorkDay get() = pieces.toDouble() / max(1, work)
 }
 
-fun totalsOf(es: List<EntryE>, days: Int) = Totals(
-    days, es.count { it.quantity > 0 }, es.count { it.quantity == 0 },
-    es.sumOf { it.quantity.toLong() }, es.sumOf { incomeOf(it) }, es.sumOf { it.expense }
+fun totalsOf(es: List<EntryE>, days: Int? = null): Totals {
+    val active = es.filter { it.deletedAt == null }
+    val byDate = active.groupBy { it.day }
+    val workDays = byDate.count { (_, list) -> list.sumOf { it.quantity } > 0 }
+    val offDays = byDate.count { (_, list) -> list.sumOf { it.quantity } == 0 }
+    val actualDays = days ?: byDate.size
+    val totalPieces = active.sumOf { it.quantity.toLong() }
+    val totalIncome = active.sumOf { incomeOf(it) }
+    val totalExpense = active.sumOf { it.expense }
+    return Totals(
+        days = actualDays,
+        work = workDays,
+        off = offDays,
+        pieces = totalPieces,
+        income = totalIncome,
+        expense = totalExpense,
+    )
+}
+
+data class Block(
+    val no: Int,
+    val from: LocalDate,
+    val to: LocalDate,
+    val partial: Boolean,
+    val t: Totals,
+    val dates: List<LocalDate> = emptyList(),
 )
 
-data class Block(val no: Int, val from: LocalDate, val to: LocalDate, val partial: Boolean, val t: Totals)
 data class DayPt(val date: LocalDate, val income: Double, val expense: Double, val pieces: Int, val exists: Boolean)
 
-/** ফোল্ডার = কাজের চক্র। সপ্তাহ ও কাজের মাস শুরুর তারিখ থেকে গোনা হয়। */
+/** ফোল্ডার = কাজের চক্র। এন্ট্রি-দিন ভিত্তিক সপ্তাহ (৭ দিন) ও কাজের মাস (৩০ দিন) হিসাব। */
 object Cycle {
     fun start(f: FolderE): LocalDate = LocalDate.ofEpochDay(f.startDay)
-    fun end(f: FolderE, today: LocalDate): LocalDate = f.endDay?.let { LocalDate.ofEpochDay(it) } ?: today
-    fun totalDays(f: FolderE, today: LocalDate): Int = max(1, ChronoUnit.DAYS.between(start(f), end(f, today)).toInt() + 1)
-    fun dayNo(f: FolderE, today: LocalDate): Int = max(1, ChronoUnit.DAYS.between(start(f), end(f, today)).toInt() + 1)
+    fun end(f: FolderE, today: LocalDate = LocalDate.now()): LocalDate = f.endDay?.let { LocalDate.ofEpochDay(it) } ?: today
 
-    fun totals(f: FolderE, es: List<EntryE>, today: LocalDate): Totals = totalsOf(es, totalDays(f, today))
+    fun uniqueEntryDates(f: FolderE, es: List<EntryE>): List<LocalDate> {
+        val active = es.filter { it.deletedAt == null && it.folderId == f.id }
+        return active.map { LocalDate.ofEpochDay(it.day) }.distinct().sorted()
+    }
 
-    /** len = ৭ (সপ্তাহ) বা ৩০ (কাজের মাস) */
-    fun blocks(f: FolderE, es: List<EntryE>, today: LocalDate, len: Int): List<Block> {
-        val s = start(f)
-        val e = end(f, today)
-        val n = (ChronoUnit.DAYS.between(s, e).toInt()) / len + 1
-        return (1..n).map { i ->
-            val from = s.plusDays(((i - 1) * len).toLong())
-            val fullTo = from.plusDays((len - 1).toLong())
-            val to = if (fullTo.isAfter(e)) e else fullTo
-            val list = es.filter { val d = LocalDate.ofEpochDay(it.day); !d.isBefore(from) && !d.isAfter(to) }
-            val days = ChronoUnit.DAYS.between(from, to).toInt() + 1
-            Block(i, from, to, to.isBefore(fullTo), totalsOf(list, days))
+    fun totalDays(f: FolderE, today: LocalDate = LocalDate.now()): Int =
+        max(1, ChronoUnit.DAYS.between(start(f), end(f, today)).toInt() + 1)
+
+    fun totalDays(f: FolderE, es: List<EntryE>, today: LocalDate = LocalDate.now()): Int {
+        val dates = uniqueEntryDates(f, es)
+        return if (dates.isEmpty()) 0 else dates.size
+    }
+
+    fun dayNo(f: FolderE, today: LocalDate = LocalDate.now()): Int =
+        max(1, ChronoUnit.DAYS.between(start(f), end(f, today)).toInt() + 1)
+
+    fun dayNo(f: FolderE, es: List<EntryE>, today: LocalDate = LocalDate.now()): Int {
+        val dates = uniqueEntryDates(f, es)
+        return max(1, dates.size)
+    }
+
+    fun totals(f: FolderE, es: List<EntryE>, today: LocalDate = LocalDate.now()): Totals {
+        val active = es.filter { it.deletedAt == null && it.folderId == f.id }
+        val dates = uniqueEntryDates(f, es)
+        return totalsOf(active, days = dates.size)
+    }
+
+    /** len = ৭ (সপ্তাহ) বা ৩০ (কাজের মাস) - consecutive groups of len unique entry dates */
+    fun blocks(f: FolderE, es: List<EntryE>, today: LocalDate = LocalDate.now(), len: Int): List<Block> {
+        val active = es.filter { it.deletedAt == null && it.folderId == f.id }
+        val byDate = active.groupBy { it.day }
+        val sortedDates = byDate.keys.sorted().map { LocalDate.ofEpochDay(it) }
+        if (sortedDates.isEmpty()) {
+            val s = start(f)
+            return listOf(Block(no = 1, from = s, to = s, partial = true, t = Totals(0, 0, 0, 0L, 0.0, 0.0), dates = emptyList()))
+        }
+        val chunks = sortedDates.chunked(len)
+        return chunks.mapIndexed { idx, chunkDates ->
+            val from = chunkDates.first()
+            val to = chunkDates.last()
+            val isPartial = chunkDates.size < len
+            val chunkEpochDays = chunkDates.map { it.toEpochDay() }.toSet()
+            val chunkEntries = active.filter { it.day in chunkEpochDays }
+            Block(
+                no = idx + 1,
+                from = from,
+                to = to,
+                partial = isPartial,
+                t = totalsOf(chunkEntries, days = chunkDates.size),
+                dates = chunkDates,
+            )
         }
     }
 
-    fun lastDays(f: FolderE, es: List<EntryE>, today: LocalDate, n: Int = 7): List<DayPt> {
-        val last = end(f, today)
-        return (n - 1 downTo 0).map { k ->
-            val d = last.minusDays(k.toLong())
-            val e = es.firstOrNull { it.day == d.toEpochDay() }
-            DayPt(d, e?.let { incomeOf(it) } ?: 0.0, e?.expense ?: 0.0, e?.quantity ?: 0, e != null)
+    fun lastDays(f: FolderE, es: List<EntryE>, today: LocalDate = LocalDate.now(), n: Int = 7): List<DayPt> {
+        val active = es.filter { it.deletedAt == null && it.folderId == f.id }
+        val byDate = active.groupBy { it.day }
+        val sortedDates = byDate.keys.sorted().map { LocalDate.ofEpochDay(it) }
+        val k = sortedDates.size
+        return if (k >= n) {
+            val lastNDates = sortedDates.takeLast(n)
+            lastNDates.map { d ->
+                val dayEntries = byDate[d.toEpochDay()] ?: emptyList()
+                DayPt(
+                    date = d,
+                    income = dayEntries.sumOf { incomeOf(it) },
+                    expense = dayEntries.sumOf { it.expense },
+                    pieces = dayEntries.sumOf { it.quantity },
+                    exists = true,
+                )
+            }
+        } else {
+            val firstDate = sortedDates.firstOrNull() ?: today
+            val padCount = n - k
+            val padPoints = (padCount downTo 1).map {
+                DayPt(firstDate.minusDays(it.toLong()), 0.0, 0.0, 0, exists = false)
+            }
+            val realPoints = sortedDates.map { d ->
+                val dayEntries = byDate[d.toEpochDay()] ?: emptyList()
+                DayPt(
+                    date = d,
+                    income = dayEntries.sumOf { incomeOf(it) },
+                    expense = dayEntries.sumOf { it.expense },
+                    pieces = dayEntries.sumOf { it.quantity },
+                    exists = true,
+                )
+            }
+            padPoints + realPoints
         }
     }
 

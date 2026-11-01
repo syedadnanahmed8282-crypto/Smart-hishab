@@ -37,7 +37,7 @@ fun ReportScreen(vm: AppVm, nav: NavHostController) {
     val today = remember { LocalDate.now() }
     val folder = f
     ScreenBox {
-        TopBar(if (folder != null) "${Fmt.bn(Cycle.totalDays(folder, today))} দিনের চক্র" else "", "রিপোর্ট", right = { FolderPill(vm, nav, folder) })
+        TopBar(if (folder != null) "${Fmt.bn(Cycle.totalDays(folder, es, today))} দিনের চক্র" else "", "রিপোর্ট", right = { FolderPill(vm, nav, folder) })
         if (folder == null) { Text("কোনো ফোল্ডার নেই", Modifier.padding(24.dp), color = Slate); return@ScreenBox }
         Row(
             Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White).border(1.dp, Sky100, RoundedCornerShape(18.dp)).padding(4.dp),
@@ -61,7 +61,8 @@ fun ReportScreen(vm: AppVm, nav: NavHostController) {
     }
 }
 
-private fun dayProfit(es: List<EntryE>, d: LocalDate): Double = es.firstOrNull { it.day == d.toEpochDay() }?.let { incomeOf(it) - it.expense } ?: 0.0
+private fun dayProfit(es: List<EntryE>, d: LocalDate): Double =
+    es.filter { it.deletedAt == null && it.day == d.toEpochDay() }.sumOf { incomeOf(it) - it.expense }
 private fun pctOf(v: Double, total: Double) = if (total <= 0) 0f else (v / total).toFloat()
 
 @Composable
@@ -85,14 +86,21 @@ private fun WeeklyTab(f: FolderE, es: List<EntryE>, today: LocalDate) {
             }
         }
     }
-    val days = (0..6).map { cur.from.plusDays(it.toLong()) }
-    val prevDays = (0..6).map { (prev?.from ?: cur.from.minusDays(7)).plusDays(it.toLong()) }
+    val curDates = cur.dates
+    val prevDates = prev?.dates ?: emptyList()
+    val curProfits = (0..6).map { i -> curDates.getOrNull(i)?.let { dayProfit(es, it) } ?: 0.0 }
+    val prevProfits = (0..6).map { i -> prevDates.getOrNull(i)?.let { dayProfit(es, it) } ?: 0.0 }
+    val labels = (0..6).map { i ->
+        curDates.getOrNull(i)?.let { Fmt.weekday(it) }
+            ?: prevDates.getOrNull(i)?.let { Fmt.weekday(it) }
+            ?: Fmt.bn(i + 1)
+    }
     Card3D(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("দৈনিক লাভ-লস", fontWeight = FontWeight.Bold, color = Navy, fontSize = 14.sp)
             Text("■ এই সপ্তাহ  ", color = Sky700, fontSize = 12.sp); 
         }
-        PairBars(days.map { if (it.isAfter(cur.to)) 0.0 else dayProfit(es, it) }, prevDays.map { dayProfit(es, it) }, days.map { Fmt.weekday(it) })
+        PairBars(curProfits, prevProfits, labels)
         Text("লস হলে বার লাল হয়ে লাইনের নিচে নামবে। হালকা বার = আগের সপ্তাহ", fontSize = 12.sp, color = Slate)
     }
     if (p != null) Card3D(Modifier.fillMaxWidth()) {
@@ -196,8 +204,11 @@ private fun GoalTab(f: FolderE, es: List<EntryE>, today: LocalDate) {
     }
     val weeks = Cycle.blocks(f, es, today, 7); val w = weeks.last(); val pw = weeks.getOrNull(weeks.size - 2)
     val target = f.dailyTarget?.takeIf { it > 0 }
-    val inWeek = es.filter { val d = LocalDate.ofEpochDay(it.day); !d.isBefore(w.from) && !d.isAfter(w.to) }
-    val best = inWeek.maxByOrNull { it.quantity }
+    val inWeek = if (w.dates.isNotEmpty()) es.filter { it.deletedAt == null && LocalDate.ofEpochDay(it.day) in w.dates }
+                 else es.filter { val d = LocalDate.ofEpochDay(it.day); it.deletedAt == null && !d.isBefore(w.from) && !d.isAfter(w.to) }
+    val inWeekByDay = inWeek.groupBy { it.day }
+    val inWeekTargetMet = if (target != null) inWeekByDay.count { (_, list) -> list.sumOf { it.quantity } >= target } else 0
+    val best = inWeekByDay.maxByOrNull { (_, list) -> list.sumOf { it.quantity } }
     Card3D(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("কাজের গতি", Modifier.weight(1f), fontWeight = FontWeight.Bold, color = Navy)
@@ -210,8 +221,8 @@ private fun GoalTab(f: FolderE, es: List<EntryE>, today: LocalDate) {
                 if (pw != null) DeltaChip(Cycle.deltaPct(w.t.avgPiecesPerWorkDay, pw.t.avgPiecesPerWorkDay))
             }
         }
-        if (target != null) Text("টার্গেট পূরণ ${Fmt.bn(inWeek.count { it.quantity >= target })}/${Fmt.bn(inWeek.size)} দিন", fontSize = 13.sp, color = Navy)
-        if (best != null) Text("সেরা দিন ${Fmt.date(LocalDate.ofEpochDay(best.day))} · ${Fmt.bn(best.quantity)} পিস", fontSize = 13.sp, color = Navy)
+        if (target != null) Text("টার্গেট পূরণ ${Fmt.bn(inWeekTargetMet)}/${Fmt.bn(w.t.work)} দিন", fontSize = 13.sp, color = Navy)
+        if (best != null) Text("সেরা দিন ${Fmt.date(LocalDate.ofEpochDay(best.key))} · ${Fmt.bn(best.value.sumOf { it.quantity })} পিস", fontSize = 13.sp, color = Navy)
         val last7 = Cycle.lastDays(f, es, today)
         TwoLineChart(last7.map { it.pieces.toDouble() }, if (target != null) List(7) { target.toDouble() } else emptyList(), last7.map { Fmt.weekday(it.date) },
             Modifier.fillMaxWidth().height(110.dp).padding(top = 8.dp), Sky600, Color(0xFFD97706), Sky100, Slate, Color.White)

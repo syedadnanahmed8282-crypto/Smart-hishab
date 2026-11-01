@@ -44,7 +44,7 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
             Box(Modifier.fillMaxWidth()) {
                 HeroBackdrop(Modifier.fillMaxWidth().height(340.dp))
                 Column(Modifier.fillMaxWidth()) {
-                    HeroText(vm, nav, folder, viewer, today)
+                    HeroText(vm, nav, folder, es, viewer, today)
                     if (folder != null) GoalCard(folder, es, today, Modifier.padding(horizontal = 20.dp, vertical = 14.dp))
                 }
             }
@@ -61,7 +61,7 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
 }
 
 @Composable
-private fun HeroText(vm: AppVm, nav: NavHostController, f: FolderE?, viewer: Boolean, today: LocalDate) {
+private fun HeroText(vm: AppVm, nav: NavHostController, f: FolderE?, es: List<EntryE> = emptyList(), viewer: Boolean, today: LocalDate) {
     val hour = LocalTime.now().hour
     val greet = when { hour < 12 -> "শুভ সকাল"; hour < 16 -> "শুভ দুপুর"; hour < 19 -> "শুভ বিকাল"; else -> "শুভ সন্ধ্যা" }
     Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 24.dp, end = 20.dp, top = 12.dp), verticalAlignment = Alignment.Top) {
@@ -70,8 +70,8 @@ private fun HeroText(vm: AppVm, nav: NavHostController, f: FolderE?, viewer: Boo
             Text("স্মার্ট হিসাব", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Navy)
             Text("${Fmt.weekdayFull(today)}, ${Fmt.dateY(today)}", fontSize = 13.sp, color = Color(0xFF0C4A6E))
             if (f != null) {
-                val d = Cycle.dayNo(f, today)
-                val tag = if (f.closed) "চক্র সমাপ্ত · ${Fmt.range(Cycle.start(f), Cycle.end(f, today))} · ${Fmt.bn(Cycle.totalDays(f, today))} দিন"
+                val d = Cycle.dayNo(f, es, today)
+                val tag = if (f.closed) "চক্র সমাপ্ত · ${Fmt.range(Cycle.start(f), Cycle.end(f, today))} · ${Fmt.bn(Cycle.totalDays(f, es, today))} দিন"
                 else "কাজের মাস ${Fmt.bn((d - 1) / 30 + 1)} · সপ্তাহ ${Fmt.bn((d - 1) / 7 + 1)} · দিন ${Fmt.bn(d)}"
                 Text(tag, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (f.closed) Color(0xFF9F1239) else Sky800, modifier = Modifier.padding(top = 2.dp))
             }

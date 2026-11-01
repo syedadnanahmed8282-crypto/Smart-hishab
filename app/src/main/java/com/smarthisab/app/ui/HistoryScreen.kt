@@ -34,7 +34,7 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
     val folder = f
 
     ScreenBox {
-        TopBar(if (folder != null) "${folder.name} · ${Fmt.bn(Cycle.totalDays(folder, today))} দিন" else "", "দৈনিক হিসাব", right = { FolderPill(vm, nav, folder) })
+        TopBar(if (folder != null) "${folder.name} · ${Fmt.bn(Cycle.totalDays(folder, es, today))} দিন" else "", "দৈনিক হিসাব", right = { FolderPill(vm, nav, folder) })
         if (folder == null) {
             Text("কোনো ফোল্ডার নেই", Modifier.padding(24.dp), color = Slate)
         } else {
