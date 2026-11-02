@@ -4,14 +4,19 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,7 +39,8 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
     val folder = f
 
     ScreenBox {
-        TopBar(if (folder != null) "${folder.name} · ${Fmt.bn(Cycle.totalDays(folder, es, today))} দিন" else "", "দৈনিক হিসাব", right = { FolderPill(vm, nav, folder) })
+        // শিরোনাম একটু ওপরে, ডানে ছোট সার্চ বার
+        TopBar("", "দৈনিক হিসাব", right = { CompactSearch(query) { query = it } })
         if (folder == null) {
             Text("কোনো ফোল্ডার নেই", Modifier.padding(24.dp), color = Slate)
         } else {
@@ -44,23 +50,21 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
                 (filter == 0 || (filter == 1 && it.quantity > 0) || (filter == 2 && it.quantity == 0)) &&
                     (query.isBlank() || Fmt.date(LocalDate.ofEpochDay(it.day)).contains(query.trim()) || (it.note ?: "").contains(query.trim(), true))
             }
-            val month = Cycle.blocks(folder, es, today, 30).last()
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("হিসাব খুঁজুন (তারিখ বা মন্তব্য)") },
-                    shape = RoundedCornerShape(18.dp), colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White, unfocusedBorderColor = Sky100, focusedBorderColor = Sky600))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip("সব ${Fmt.bn(t.work + t.off)}", filter == 0) { filter = 0 }
-                    Chip("কাজ ${Fmt.bn(t.work)}", filter == 1, Green) { filter = 1 }
-                    Chip("বন্ধ ${Fmt.bn(t.off)}", filter == 2, Rose) { filter = 2 }
+                StatsRow(t)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { FolderPill(vm, nav, folder) }
+                    Spacer(Modifier.width(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Chip("সব ${Fmt.bn(t.work + t.off)}", filter == 0) { filter = 0 }
+                        Chip("কাজ ${Fmt.bn(t.work)}", filter == 1, Green) { filter = 1 }
+                        Chip("বন্ধ ${Fmt.bn(t.off)}", filter == 2, Rose) { filter = 2 }
+                    }
                 }
                 if (viewer) Banner("শুধু দেখা যাবে, বদলানো যাবে না", "ভিউয়ার মোড", Color(0xFFEEF2FF), Color(0xFFC7D2FE), Indigo)
                 else if (folder.closed) Banner("নতুন এন্ট্রি বা মোছা যাবে না", "সমাপ্ত ফোল্ডার", Color(0xFFFFF1F2), Color(0xFFFECDD3), Rose)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("কাজের মাস ${Fmt.bn(month.no)}", fontWeight = FontWeight.Bold, color = Navy, fontSize = 15.sp)
-                    Text("লাভ ${Fmt.taka(month.t.profit)}", fontWeight = FontWeight.Bold, color = Green, fontSize = 13.sp)
-                }
             }
-            LazyColumn(contentPadding = PaddingValues(20.dp, 8.dp, 20.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(contentPadding = PaddingValues(20.dp, 10.dp, 20.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 itemsIndexed(list, key = { _, it -> it.id }) { i, e -> EntryRow(e, if (locked) null else ({ sel = e }), Modifier.riseIn(i)) }
                 if (list.isEmpty()) item { Text("কোনো হিসাব পাওয়া যায়নি", color = Slate, modifier = Modifier.padding(8.dp)) }
             }
@@ -90,9 +94,35 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
     }
 }
 
+/** শিরোনামের ডানে বসানো ছোট সার্চ বার */
+@Composable
+private fun CompactSearch(value: String, onChange: (String) -> Unit) {
+    Row(
+        Modifier.width(158.dp).height(40.dp).shadow(6.dp, CircleShape, ambientColor = Sky500, spotColor = Sky500)
+            .background(Color.White, CircleShape).border(1.dp, Sky100, CircleShape).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Ico(Ic.search, size = 18.dp, tint = Slate)
+        BasicTextField(
+            value, onChange, Modifier.weight(1f).padding(start = 8.dp), singleLine = true,
+            textStyle = TextStyle(fontSize = 14.sp, color = Navy), cursorBrush = SolidColor(Sky700),
+            decorationBox = { inner ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) Text("খুঁজুন", fontSize = 14.sp, color = Color(0xFF64748B))
+                    inner()
+                }
+            },
+        )
+        if (value.isNotEmpty()) Ico(Ic.x, Modifier.bounceClick(true) { onChange("") }, size = 16.dp, tint = Slate)
+    }
+}
+
 @Composable
 private fun SheetAction(icon: String, title: String, sub: String, color: Color, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().bounceClick(true, onClick).clip(RoundedCornerShape(14.dp)).padding(vertical = 10.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(
+        Modifier.fillMaxWidth().bounceClick(true, onClick).clip(RoundedCornerShape(14.dp)).padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Box(Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(if (color == Rose) Color(0xFFFFE4E6) else Sky100), contentAlignment = Alignment.Center) { Ico(icon, size = 20.dp, tint = color) }
         Column { Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = color); Text(sub, fontSize = 12.sp, color = Slate) }
     }

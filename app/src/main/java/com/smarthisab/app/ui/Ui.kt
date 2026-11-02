@@ -89,6 +89,16 @@ fun SoftButton(text: String, modifier: Modifier = Modifier, color: Color = Sky80
     }
 }
 
+/** জায়গায় না ধরলে লেখা নিজে ছোট হয়ে এক লাইনে বসে */
+@Composable
+fun FitText(text: String, modifier: Modifier = Modifier, maxSize: TextUnit = 14.sp, minSize: TextUnit = 8.sp, color: Color = Color.Unspecified, fontWeight: FontWeight? = null) {
+    var size by remember(text) { mutableStateOf(maxSize) }
+    Text(
+        text, modifier, color = color, fontSize = size, fontWeight = fontWeight, maxLines = 1, softWrap = false,
+        onTextLayout = { if (it.didOverflowWidth && size.value > minSize.value) size = (size.value - .5f).sp },
+    )
+}
+
 @Composable
 fun Chip(text: String, selected: Boolean = false, color: Color = Sky800, onClick: () -> Unit = {}) {
     Text(

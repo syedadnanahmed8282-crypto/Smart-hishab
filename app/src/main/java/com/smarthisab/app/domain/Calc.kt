@@ -32,6 +32,8 @@ object Fmt {
     fun parseInt(s: String): Int = ascii(s).filter { it.isDigit() }.take(9).toIntOrNull() ?: 0
     fun parseMoney(s: String): Double = ascii(s).filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
     fun monthName(m: Int): String = months[m - 1]
+    private val monthsShort = listOf("জানু", "ফেব্রু", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট", "সেপ্টে", "অক্টো", "নভে", "ডিসে")
+    fun monthShort(d: LocalDate): String = monthsShort[d.monthValue - 1]
     fun date(d: LocalDate): String = "${bn(d.dayOfMonth)} ${months[d.monthValue - 1]}"
     fun dateY(d: LocalDate): String = date(d) + " " + bn(d.year.toString())
     fun weekday(d: LocalDate): String = weekdays[d.dayOfWeek.value - 1]
