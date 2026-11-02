@@ -24,6 +24,9 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -98,10 +101,14 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
 
     // ---------- ভিউয়ার মোড ----------
     private fun hash(pin: String) = MessageDigest.getInstance("SHA-256").digest(("smarthisab:$pin").toByteArray()).joinToString("") { "%02x".format(it) }
-    suspend fun enableViewer(pin: String) {
+    /** চালু করার আগে বাকি বদল আপলোড করে নেয়। যেগুলো তবু বাকি থাকে তার সংখ্যা ফেরত দেয়। */
+    suspend fun enableViewer(pin: String): Int {
         val p = Fmt.ascii(pin)
         if (p.length != 4 || !p.all { it.isDigit() }) throw AppError("৪ সংখ্যার PIN দিন")
+        if (signedIn()) sync()
+        val pending = fd.dirty().size + ed.dirty().size
         kd.put(KvE("pin", hash(p))); kd.put(KvE("viewer", "1"))
+        return pending
     }
     suspend fun disableViewer(pin: String) {
         if (kd.get("pin") != hash(Fmt.ascii(pin))) throw AppError("PIN ঠিক নয়")
@@ -169,7 +176,7 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
         if (dup != null && dup.id != id) throw AppError("এই তারিখে আগেই এন্ট্রি আছে, সেটা সম্পাদনা করুন")
         val old = id?.let { ed.get(it) }
         val n = note?.trim()?.takeIf { it.isNotEmpty() }
-        ed.upsert(EntryE(id ?: UUID.randomUUID().toString(), folderId, day.toEpochDay(), qty, expense, old?.rate ?: f.wageRate, n, null, now(), true))
+        ed.upsert(EntryE(id ?: UUID.randomUUID().toString(), folderId, day.toEpochDay(), qty, expense, old?.rate ?: f.wageRate, n, null, now(), true, old?.version ?: 0))
     }
     suspend fun deleteEntry(id: String): Boolean {
         val e = ed.get(id) ?: return false
@@ -186,14 +193,16 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
     }
 
     // ---------- সিঙ্ক ----------
-    suspend fun sync(): Result<Unit> = mutex.withLock {
+    /** সফল হলে ফেরত দেয়: অন্য ফোনের নতুন তথ্যের সাথে না মেলায় বাদ পড়া বদলের সংখ্যা */
+    suspend fun sync(): Result<Int> = mutex.withLock {
         try {
             val uid = supabase.auth.currentUserOrNull()?.id ?: throw AppError("লগইন নেই")
-            push(uid)
+            // ভিউয়ার মোডে শুধু ডাউনলোড, কিছুই আপলোড হয় না
+            val lost = if (kd.get("viewer") == "1") 0 else push(uid)
             pull()
             snapshots()
             kd.put(KvE("last_sync", now().toString()))
-            Result.success(Unit)
+            Result.success(lost)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -202,17 +211,68 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
         }
     }
 
-    private suspend fun push(uid: String) {
+    private val enc = Json { encodeDefaults = true; explicitNulls = true }
+    private fun isServerWins(e: PushErr) = e.msg.contains("সমাপ্ত") || e.msg.contains("one_per_day") || e.msg.contains("duplicate key")
+    private fun nextVer(v: Int, passes: Int = 1) = if (v == 0) passes else v + passes
+
+    private suspend fun rpcPush(fn: String, rows: JsonElement): PushRes =
+        supabase.postgrest.rpc(fn, buildJsonObject { put("p_rows", rows) }).decodeAs<PushRes>()
+
+    /** আপলোড: প্রতিটা সারির সাথে "আমি সংস্করণ N দেখে বদলেছি" পাঠানো হয়। সার্ভারে সংস্করণ এগিয়ে গেলে ওই সারি নেওয়া হয় না। */
+    private suspend fun push(uid: String): Int {
         val fs = fd.dirty()
         val es = ed.dirty()
-        // সমাপ্ত ফোল্ডারে নতুন এন্ট্রি থাকলে আগে চালু অবস্থায় পাঠাই, এন্ট্রি যাওয়ার পর সমাপ্ত করি
+        if (fs.isEmpty() && es.isEmpty()) return 0
         val closing = fs.filter { f -> f.closed && es.any { it.folderId == f.id } }
         val closingIds = closing.map { it.id }.toSet()
-        if (fs.isNotEmpty()) supabase.from("folders").upsert(fs.map { it.toUp(uid, forceRunning = it.id in closingIds) })
-        if (es.isNotEmpty()) supabase.from("entries").upsert(es.map { it.toUp(uid) })
-        if (closing.isNotEmpty()) supabase.from("folders").upsert(closing.map { it.toUp(uid) })
-        for (f in fs) fd.get(f.id)?.let { if (it.updatedAt == f.updatedAt) fd.upsert(it.copy(dirty = false)) }
-        for (e in es) ed.get(e.id)?.let { if (it.updatedAt == e.updatedAt) ed.upsert(it.copy(dirty = false)) }
+        var lost = 0
+        var firstErr: String? = null
+
+        // ১) ফোল্ডার (সমাপ্ত ফোল্ডারে এন্ট্রি থাকলে আগে চালু অবস্থায়)
+        if (fs.isNotEmpty()) {
+            val res = rpcPush("push_folders", enc.encodeToJsonElement(ListSerializer(FolderUp.serializer()), fs.map { it.toUp(uid, forceRunning = it.id in closingIds) }))
+            val wins = res.conflicts.toSet() + res.errors.filter { isServerWins(it) }.map { it.id }
+            val failing = wins + res.errors.map { it.id }
+            res.errors.firstOrNull { !isServerWins(it) }?.let { firstErr = firstErr ?: it.msg }
+            for (f in fs) if (f.id !in failing && f.id !in closingIds) fd.get(f.id)?.let { if (it.updatedAt == f.updatedAt) fd.upsert(it.copy(dirty = false, version = nextVer(f.version))) }
+            lost += refetchFolders(wins)
+        }
+        // ২) এন্ট্রি
+        if (es.isNotEmpty()) {
+            val res = rpcPush("push_entries", enc.encodeToJsonElement(ListSerializer(EntryUp.serializer()), es.map { it.toUp(uid) }))
+            val wins = res.conflicts.toSet() + res.errors.filter { isServerWins(it) }.map { it.id }
+            val failing = wins + res.errors.map { it.id }
+            res.errors.firstOrNull { !isServerWins(it) }?.let { firstErr = firstErr ?: it.msg }
+            for (e in es) if (e.id !in failing) ed.get(e.id)?.let { if (it.updatedAt == e.updatedAt) ed.upsert(it.copy(dirty = false, version = nextVer(e.version))) }
+            lost += refetchEntries(wins)
+        }
+        // ৩) এন্ট্রি যাওয়ার পর ফোল্ডার সমাপ্ত করা
+        if (closing.isNotEmpty()) {
+            val res = rpcPush("push_folders", enc.encodeToJsonElement(ListSerializer(FolderUp.serializer()), closing.map { it.toUp(uid, skipCheck = true) }))
+            val failing = res.conflicts.toSet() + res.errors.map { it.id }
+            res.errors.firstOrNull { !isServerWins(it) }?.let { firstErr = firstErr ?: it.msg }
+            for (f in closing) if (f.id !in failing) fd.get(f.id)?.let { if (it.updatedAt == f.updatedAt) fd.upsert(it.copy(dirty = false, version = nextVer(f.version, 2))) }
+            lost += refetchFolders(res.conflicts.toSet() + res.errors.filter { isServerWins(it) }.map { it.id })
+        }
+        firstErr?.let { throw AppError(it) }
+        return lost
+    }
+
+    /** সংঘর্ষে সার্ভারের তথ্য রেখে ফোনের বদল বাদ */
+    private suspend fun refetchFolders(ids: Set<String>): Int {
+        if (ids.isEmpty()) return 0
+        val remote = supabase.from("folders").select { filter { isIn("id", ids.toList()) } }.decodeList<FolderDown>()
+        remote.forEach { fd.upsert(it.toLocal()) }
+        return ids.size
+    }
+
+    private suspend fun refetchEntries(ids: Set<String>): Int {
+        if (ids.isEmpty()) return 0
+        val remote = supabase.from("entries").select { filter { isIn("id", ids.toList()) } }.decodeList<EntryDown>()
+        remote.forEach { ed.upsert(it.toLocal()) }
+        val found = remote.map { it.id }.toSet()
+        ids.filter { it !in found }.forEach { ed.delete(it) }  // সার্ভারে নেই (যেমন একই তারিখে অন্য ফোনের এন্ট্রি আগেই আছে)
+        return ids.size
     }
 
     private suspend fun pull() {

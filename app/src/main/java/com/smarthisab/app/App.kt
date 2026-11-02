@@ -8,6 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.smarthisab.app.data.AppDb
+import com.smarthisab.app.data.MIGRATION_1_2
 import com.smarthisab.app.data.Repo
 import com.smarthisab.app.data.buildSupabase
 import com.smarthisab.app.sync.SyncWorker
@@ -19,7 +20,7 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        val db = Room.databaseBuilder(this, AppDb::class.java, "smarthisab.db").build()
+        val db = Room.databaseBuilder(this, AppDb::class.java, "smarthisab.db").addMigrations(MIGRATION_1_2).build()
         repo = Repo(db, buildSupabase())
         val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())

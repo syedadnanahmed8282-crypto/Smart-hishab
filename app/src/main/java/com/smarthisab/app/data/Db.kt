@@ -1,6 +1,8 @@
 package com.smarthisab.app.data
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "folders")
@@ -18,6 +20,7 @@ data class FolderE(
     val deletedAt: Long? = null,
     val updatedAt: Long = System.currentTimeMillis(),
     val dirty: Boolean = true,
+    val version: Int = 0,
 )
 
 @Entity(tableName = "entries", indices = [Index("folderId", "day")])
@@ -32,6 +35,7 @@ data class EntryE(
     val deletedAt: Long? = null,
     val updatedAt: Long = System.currentTimeMillis(),
     val dirty: Boolean = true,
+    val version: Int = 0,
 )
 
 @Entity(tableName = "kv")
@@ -59,6 +63,7 @@ interface EntryDao {
     @Query("SELECT * FROM entries WHERE dirty = 1") suspend fun dirty(): List<EntryE>
     @Query("SELECT * FROM entries") suspend fun all(): List<EntryE>
     @Upsert suspend fun upsert(e: EntryE)
+    @Query("DELETE FROM entries WHERE id = :id") suspend fun delete(id: String)
     @Query("DELETE FROM entries") suspend fun clear()
 }
 
@@ -71,7 +76,15 @@ interface KvDao {
     @Query("DELETE FROM kv") suspend fun clear()
 }
 
-@Database(entities = [FolderE::class, EntryE::class, KvE::class], version = 1, exportSchema = false)
+/** সংস্করণ নম্বর যোগ (দুই ফোনের বদল সংঘর্ষ ধরার জন্য) */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE folders ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE entries ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+@Database(entities = [FolderE::class, EntryE::class, KvE::class], version = 2, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun folders(): FolderDao
     abstract fun entries(): EntryDao

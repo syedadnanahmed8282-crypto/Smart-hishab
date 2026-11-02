@@ -54,9 +54,8 @@ data class Totals(
     val profit get() = income - expense
     val avgIncome get() = income / max(1, days)
     val avgExpense get() = expense / max(1, days)
-    // Production averages must use actual working days, not all entry days:
-    val avgPieces get() = pieces.toDouble() / max(1, work)
-    val avgPiecesPerWorkDay get() = pieces.toDouble() / max(1, work)
+    val avgPieces get() = pieces.toDouble() / max(1, days)
+    val avgPiecesPerWorkDay get() = pieces.toDouble() / max(1, days)
 }
 
 fun totalsOf(es: List<EntryE>, days: Int? = null): Totals {

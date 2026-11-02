@@ -78,7 +78,11 @@ class AppVm(val repo: Repo) : ViewModel() {
             syncing.value = true
             val r = repo.sync()
             syncing.value = false
-            if (manual) say(if (r.isSuccess) "সিঙ্ক হয়েছে" else "সিঙ্ক হয়নি: ${r.exceptionOrNull()?.message ?: ""}")
+            r.onSuccess { lost ->
+                if (lost > 0) say("${com.smarthisab.app.domain.Fmt.bn(lost)}টা বদল অন্য ফোনের নতুন তথ্যের সাথে মেলেনি, সার্ভারের তথ্য রাখা হয়েছে", ms = 7000)
+                else if (manual) say("সিঙ্ক হয়েছে")
+            }
+            r.onFailure { if (manual) say("সিঙ্ক হয়নি: ${it.message ?: ""}") }
         }
     }
 
@@ -108,7 +112,10 @@ class AppVm(val repo: Repo) : ViewModel() {
     }
 
     // ---- ভিউয়ার মোড ----
-    fun enableViewer(pin: String, done: () -> Unit) = act("ভিউয়ার মোড চালু হয়েছে", done) { repo.enableViewer(pin) }
+    fun enableViewer(pin: String, done: () -> Unit) = act(done = done) {
+        val pending = repo.enableViewer(pin)
+        say(if (pending > 0) "ভিউয়ার মোড চালু। ${com.smarthisab.app.domain.Fmt.bn(pending)}টা বদল আপলোড বাকি, মোড বন্ধ করলে যাবে" else "ভিউয়ার মোড চালু হয়েছে", ms = 6000)
+    }
     fun disableViewer(pin: String, done: () -> Unit) = act("ভিউয়ার মোড বন্ধ হয়েছে", done) { repo.disableViewer(pin) }
     fun disableViewerPw(pw: String, done: () -> Unit) = act("ভিউয়ার মোড বন্ধ হয়েছে", done) { repo.disableViewerWithPassword(pw) }
 

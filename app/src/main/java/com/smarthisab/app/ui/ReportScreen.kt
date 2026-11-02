@@ -176,7 +176,7 @@ private fun ProgBar(p: Float, forecast: Float, color: Color, ghost: Color) {
 private fun GoalTab(f: FolderE, es: List<EntryE>, today: LocalDate) {
     val cur = Cycle.blocks(f, es, today, 30).last()
     val t = cur.t
-    val perDayInc = t.income / max(1, t.days); val perDayExp = t.expense / max(1, t.days)
+    val perDayInc = t.avgIncome; val perDayExp = t.avgExpense
     val goal = f.incomeGoal?.takeIf { it > 0 }; val limit = f.expenseLimit?.takeIf { it > 0 }
     Card3D(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
