@@ -61,8 +61,7 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
                         Chip("বন্ধ ${Fmt.bn(t.off)}", filter == 2, Rose) { filter = 2 }
                     }
                 }
-                if (viewer) Banner("শুধু দেখা যাবে, বদলানো যাবে না", "ভিউয়ার মোড", Color(0xFFEEF2FF), Color(0xFFC7D2FE), Indigo)
-                else if (folder.closed) Banner("নতুন এন্ট্রি বা মোছা যাবে না", "সমাপ্ত ফোল্ডার", Color(0xFFFFF1F2), Color(0xFFFECDD3), Rose)
+                if (!viewer && folder.closed) Banner("নতুন এন্ট্রি বা মোছা যাবে না", "সমাপ্ত ফোল্ডার", Color(0xFFFFF1F2), Color(0xFFFECDD3), Rose)
             }
             LazyColumn(contentPadding = PaddingValues(20.dp, 10.dp, 20.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 itemsIndexed(list, key = { _, it -> it.id }) { i, e -> EntryRow(e, if (locked) null else ({ sel = e }), Modifier.riseIn(i)) }

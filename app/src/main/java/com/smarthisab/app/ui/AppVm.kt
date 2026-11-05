@@ -11,7 +11,7 @@ import java.time.LocalDate
 
 data class UiMsg(val text: String, val action: String? = null, val ms: Long = 4000, val onAction: (() -> Unit)? = null)
 
-class AppVm(val repo: Repo) : ViewModel() {
+class AppVm(val repo: Repo, val wx: WeatherService) : ViewModel() {
     private val eager = SharingStarted.Eagerly
     val folders = repo.folders.stateIn(viewModelScope, eager, emptyList())
     val entries = repo.entries.stateIn(viewModelScope, eager, emptyList())
@@ -34,6 +34,12 @@ class AppVm(val repo: Repo) : ViewModel() {
     val messages = MutableSharedFlow<UiMsg>(extraBufferCapacity = 16)
     val syncing = MutableStateFlow(false)
     private var realtime: Job? = null
+
+    // ---- আবহাওয়া ----
+    val weather = wx.state
+    val weatherLoading = wx.loading
+    init { viewModelScope.launch { wx.loadCache() } }
+    fun refreshWeather(force: Boolean = false) { viewModelScope.launch { wx.refresh(force) } }
 
     init {
         viewModelScope.launch {

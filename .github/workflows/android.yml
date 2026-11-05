@@ -1,48 +1,26 @@
-name: Build Android APK
-
+name: Android CI
 on:
   push:
-    branches: [ "**" ]
   pull_request:
-    branches: [ "**" ]
   workflow_dispatch:
-
-permissions:
-  contents: read
-
 jobs:
   build:
-    name: Build & Export APK
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'gradle'
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Ensure debug keystore exists
-        run: |
-          if [ ! -f debug.keystore ]; then
-            echo "Creating debug keystore..."
-            keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          fi
-
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Upload Debug APK Artifact
-        uses: actions/upload-artifact@v4
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
         with:
-          name: SmartHisab-APK
+          gradle-version: 8.9
+      - name: Build debug APK
+        env:
+          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
+        run: gradle :app:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smart-hisab-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14

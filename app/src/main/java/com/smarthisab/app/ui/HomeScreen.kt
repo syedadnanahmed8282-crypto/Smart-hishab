@@ -1,6 +1,10 @@
 package com.smarthisab.app.ui
 
 import androidx.compose.animation.core.*
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -19,10 +23,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.delay
 import com.smarthisab.app.data.EntryE
 import com.smarthisab.app.data.FolderE
 import com.smarthisab.app.domain.*
@@ -39,6 +50,22 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
     val viewer by vm.viewer.collectAsState()
     val today = remember { LocalDate.now() }
     val folder = f
+
+    // ---- আবহাওয়া (সূর্যের ওপর তাপমাত্রা) ----
+    val ctx = LocalContext.current
+    val weather by vm.weather.collectAsState()
+    val wLoading by vm.weatherLoading.collectAsState()
+    val locPerms = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    fun hasLoc() = locPerms.any { ContextCompat.checkSelfPermission(ctx, it) == PackageManager.PERMISSION_GRANTED }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.refreshWeather(true) }
+    LaunchedEffect(Unit) { if (!hasLoc()) permLauncher.launch(locPerms) else vm.refreshWeather(false) }
+    LaunchedEffect(Unit) { while (true) { delay(15 * 60_000L); vm.refreshWeather(false) } }
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val ob = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) vm.refreshWeather(false) }
+        owner.lifecycle.addObserver(ob)
+        onDispose { owner.lifecycle.removeObserver(ob) }
+    }
     Box(Modifier.fillMaxSize().background(Sky50)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Box(Modifier.fillMaxWidth()) {
@@ -49,6 +76,11 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
                     Row(Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp)) { FolderPill(vm, nav, folder) }
                     if (folder != null) GoalCard(folder, es, today, Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp))
                 }
+                WeatherBadge(
+                    weather, wLoading, vm.wx.hasKey,
+                    onClick = { if (!hasLoc()) permLauncher.launch(locPerms) else vm.refreshWeather(true) },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 18.dp),
+                )
             }
             if (folder == null) EmptyHome(nav) else HomeBody(vm, nav, folder, es, viewer, today)
             Spacer(Modifier.height(96.dp))
@@ -87,53 +119,75 @@ private fun GoalCard(f: FolderE, es: List<EntryE>, today: LocalDate, modifier: M
     val warn = when { expP >= 1f -> Red300; expP >= .8f -> Yellow; else -> Pink }
     val days = Cycle.lastDays(f, es, today)
     BlueCard(modifier.fillMaxWidth(), delay = 1) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                DualRing(incP, expP, warn, 80.dp) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(pct(incP), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text(pct(expP), color = warn, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 86.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DualRing(incP, expP, warn, 66.dp) { Text("৳", color = Color.White.copy(alpha = .55f), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                // মাসিক লক্ষ্য ও সীমা: কম লেখা, এক লাইনে মান
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                    GoalItem(Color.White, "আয়", Fmt.taka(cur.t.income), "লক্ষ্য", goal, incP, false)
+                    Spacer(Modifier.height(5.dp))
+                    GoalItem(warn, "খরচ", Fmt.taka(cur.t.expense), "সীমা", limit, expP, expP >= .8f)
                 }
-                Column(Modifier.weight(1f)) {
-                    MetricRow("মাসিক আয়ের লক্ষ্য", Color.White, Color(0xFFE0F2FE), pct(incP), Color.White)
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(Fmt.taka(cur.t.income), color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Text(if (goal != null) " / ${Fmt.taka(goal)}" else " (লক্ষ্য ঠিক করা নেই)", color = Sky100, fontSize = 12.sp)
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Color.White.copy(alpha = .2f))
-                    MetricRow("মাসিক খরচের সীমা", warn, warn, pct(expP), warn, warnIcon = expP >= .8f)
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(Fmt.taka(cur.t.expense), color = if (expP >= .8f) warn else Color(0xFFFFE4E6), fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Text(if (limit != null) " / ${Fmt.taka(limit)}" else " (সীমা ঠিক করা নেই)", color = warn, fontSize = 12.sp)
-                    }
+                // চক্রের গড়/দিন: মাল, আয়, খরচ, বাকি (বাকি = আয় − খরচ), এক এক লাইনে, বর্ডার ছাড়া
+                Column(Modifier.width(120.dp), verticalArrangement = Arrangement.Center) {
+                    Text("চক্রের গড়/দিন", color = Color.White, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                    AvgRow("মাল", "${Fmt.bn(tot.avgPieces.roundToInt())} পিস", Sky300)
+                    AvgRow("আয়", Fmt.taka(tot.avgIncome), Color.White)
+                    AvgRow("খরচ", Fmt.taka(tot.avgExpense), Pink)
+                    AvgRow("বাকি", Fmt.taka(tot.avgIncome - tot.avgExpense), Color(0xFF6EE7B7))
                 }
             }
-            HorizontalDivider(Modifier.padding(top = 10.dp, bottom = 8.dp), color = Color.White.copy(alpha = .22f))
-            Text("চক্রের গড়/দিন", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AvgCell("আয়", Fmt.taka(tot.avgIncome), Color.White, Modifier.weight(1f))
-                AvgCell("খরচ", Fmt.taka(tot.avgExpense), Pink, Modifier.weight(1f))
-                AvgCell("মাল", "${Fmt.bn(tot.avgPieces.roundToInt())} পিস", Sky200, Modifier.weight(1f))
+            Spacer(Modifier.height(6.dp))
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = .10f), Color.White.copy(alpha = .04f))))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("শেষ ৭ দিন", color = Color.White, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { LegendLine(Color.White, "আয়"); LegendLine(Pink, "খরচ") }
+                }
+                TwoLineChart(
+                    days.map { it.income }, days.map { it.expense },
+                    days.map { if (it.date == today) "আজ" else Fmt.bn(it.date.dayOfMonth) },
+                    Modifier.fillMaxWidth().height(68.dp), area = true, glow = true, todayLabel = Fmt.taka(days.last().income),
+                )
             }
-            TwoLineChart(
-                days.map { it.income }, days.map { it.expense },
-                days.map { if (it.date == today) "আজ" else Fmt.bn(it.date.dayOfMonth) },
-                Modifier.fillMaxWidth().height(100.dp).padding(top = 4.dp),
-            )
         }
         if (f.closed) SealStamp(tot, Cycle.start(f), Cycle.end(f, today), Modifier.align(Alignment.Center).padding(top = 40.dp).widthIn(max = 290.dp))
     }
 }
 
 @Composable
-private fun MetricRow(label: String, dot: Color, labelColor: Color, pct: String, pctColor: Color, warnIcon: Boolean = false) {
-    val pulse by rememberInfiniteTransition(label = "warn").animateFloat(1f, 1.3f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "w")
+private fun GoalItem(dot: Color, label: String, value: String, limitLabel: String, limit: Double?, p: Float, warn: Boolean) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+            Text(label, Modifier.padding(start = 5.dp), fontSize = 12.sp, lineHeight = 18.sp, color = Sky100, maxLines = 1, softWrap = false)
+            if (warn) Ico(Ic.warn, Modifier.padding(start = 3.dp), size = 12.dp, tint = dot, sw = 2.4f)
+            FitText(value, Modifier.weight(1f).padding(start = 6.dp), maxSize = 14.sp, minSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold, lineHeight = 18.sp)
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            FitText(if (limit != null) "$limitLabel ${Fmt.taka(limit)}" else "$limitLabel ঠিক করা নেই", Modifier.weight(1f), maxSize = 12.sp, minSize = 9.sp, color = Sky200, lineHeight = 17.sp)
+            if (limit != null) Text(pct(p), Modifier.padding(start = 4.dp), fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, color = if (warn) dot else Color.White, maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+@Composable
+private fun AvgRow(label: String, value: String, dot: Color) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 17.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+        Text(label, Modifier.padding(start = 4.dp), fontSize = 12.sp, lineHeight = 17.sp, color = Sky100, maxLines = 1, softWrap = false)
+        FitText(value, Modifier.weight(1f).padding(start = 4.dp), maxSize = 13.sp, minSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, lineHeight = 17.sp)
+    }
+}
+
+@Composable
+private fun LegendLine(c: Color, t: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
-        if (warnIcon) Ico(Ic.warn, Modifier.padding(start = 4.dp).graphicsLayer { scaleX = pulse; scaleY = pulse }, size = 13.dp, tint = dot, sw = 2.4f)
-        Text(label, Modifier.padding(start = 5.dp).weight(1f), color = labelColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(pct, color = pctColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Box(Modifier.size(width = 14.dp, height = 3.dp).clip(CircleShape).background(c))
+        Text(t, Modifier.padding(start = 4.dp), fontSize = 12.sp, lineHeight = 16.sp, color = Sky100)
     }
 }
 

@@ -91,10 +91,10 @@ fun SoftButton(text: String, modifier: Modifier = Modifier, color: Color = Sky80
 
 /** জায়গায় না ধরলে লেখা নিজে ছোট হয়ে এক লাইনে বসে */
 @Composable
-fun FitText(text: String, modifier: Modifier = Modifier, maxSize: TextUnit = 14.sp, minSize: TextUnit = 8.sp, color: Color = Color.Unspecified, fontWeight: FontWeight? = null) {
+fun FitText(text: String, modifier: Modifier = Modifier, maxSize: TextUnit = 14.sp, minSize: TextUnit = 8.sp, color: Color = Color.Unspecified, fontWeight: FontWeight? = null, textAlign: TextAlign? = null, lineHeight: TextUnit = TextUnit.Unspecified) {
     var size by remember(text) { mutableStateOf(maxSize) }
     Text(
-        text, modifier, color = color, fontSize = size, fontWeight = fontWeight, maxLines = 1, softWrap = false,
+        text, modifier, color = color, fontSize = size, fontWeight = fontWeight, textAlign = textAlign, lineHeight = lineHeight, maxLines = 1, softWrap = false,
         onTextLayout = { if (it.didOverflowWidth && size.value > minSize.value) size = (size.value - .5f).sp },
     )
 }
@@ -222,7 +222,7 @@ fun HeroBackdrop(modifier: Modifier = Modifier) {
     }
 }
 
-/** আয় (সাদা, চওড়া) ও খরচ (রঙিন, সরু) — একই রিংয়ে দুই স্তর, সাথে ঘুরন্ত আলোর বিন্দু */
+/** ক্লাসিক ডায়াল-রিং: বাইরে ঘড়ির মতো দাগ, আয় (সাদা-নীল গ্রেডিয়েন্ট) ও ভেতরে খরচ (রঙিন), সাথে ঘুরন্ত আলোর বিন্দু */
 @Composable
 fun DualRing(income: Float, expense: Float, expenseColor: Color, size: Dp = 76.dp, center: @Composable BoxScope.() -> Unit = {}) {
     var go by remember { mutableStateOf(false) }
@@ -232,62 +232,97 @@ fun DualRing(income: Float, expense: Float, expenseColor: Color, size: Dp = 76.d
     val orbit by rememberInfiniteTransition(label = "orb").animateFloat(0f, 360f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "o")
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            val sw = this.size.minDimension * .1f
-            val tl = Offset(sw / 2, sw / 2)
-            val sz = Size(this.size.width - sw, this.size.height - sw)
-            drawArc(Color.White.copy(alpha = .22f), 0f, 360f, false, tl, sz, style = Stroke(sw))
-            drawArc(Color.White, -90f, 360f * a, false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
-            drawArc(Sky800, -90f, 360f * b, false, tl, sz, style = Stroke(sw * .65f, cap = StrokeCap.Round))
-            drawArc(expenseColor, -90f, 360f * b, false, tl, sz, style = Stroke(sw * .36f, cap = StrokeCap.Round))
-            val ang = Math.toRadians((orbit - 90).toDouble())
-            val r = (this.size.minDimension - sw) / 2f
-            val c = Offset(this.size.width / 2f + (r * cos(ang)).toFloat(), this.size.height / 2f + (r * sin(ang)).toFloat())
-            drawCircle(Color.White.copy(alpha = .35f), sw * .95f, c)
-            drawCircle(Color.White, sw * .3f, c)
+            val dim = this.size.minDimension
+            val c = Offset(this.size.width / 2f, this.size.height / 2f)
+            for (i in 0 until 24) {
+                val ang = Math.toRadians((i * 15 - 90).toDouble())
+                val r1 = dim / 2f
+                val r2 = r1 - 2.5.dp.toPx()
+                drawLine(Color.White.copy(alpha = .3f), Offset(c.x + (r1 * cos(ang)).toFloat(), c.y + (r1 * sin(ang)).toFloat()),
+                    Offset(c.x + (r2 * cos(ang)).toFloat(), c.y + (r2 * sin(ang)).toFloat()), 1.dp.toPx())
+            }
+            val sw = dim * .07f
+            val si = sw * .72f
+            val ro = dim / 2f - 4.dp.toPx() - sw / 2f
+            val ri = ro - sw / 2f - 5.dp.toPx() - si / 2f
+            val tlO = Offset(c.x - ro, c.y - ro); val szO = Size(ro * 2, ro * 2)
+            val tlI = Offset(c.x - ri, c.y - ri); val szI = Size(ri * 2, ri * 2)
+            drawArc(Color.White.copy(alpha = .16f), 0f, 360f, false, tlO, szO, style = Stroke(sw))
+            drawArc(Color.White.copy(alpha = .14f), 0f, 360f, false, tlI, szI, style = Stroke(si))
+            drawArc(Color.White.copy(alpha = .2f), -90f, 360f * a, false, tlO, szO, style = Stroke(sw * 1.9f, cap = StrokeCap.Round))
+            drawArc(Brush.linearGradient(listOf(Color.White, Sky300), Offset(0f, 0f), Offset(dim, dim)), -90f, 360f * a, false, tlO, szO, style = Stroke(sw, cap = StrokeCap.Round))
+            drawArc(expenseColor.copy(alpha = .25f), -90f, 360f * b, false, tlI, szI, style = Stroke(si * 1.9f, cap = StrokeCap.Round))
+            drawArc(expenseColor, -90f, 360f * b, false, tlI, szI, style = Stroke(si, cap = StrokeCap.Round))
+            val oa = Math.toRadians((orbit - 90).toDouble())
+            val oc = Offset(c.x + (ro * cos(oa)).toFloat(), c.y + (ro * sin(oa)).toFloat())
+            drawCircle(Color.White.copy(alpha = .35f), sw * .95f, oc)
+            drawCircle(Color.White, sw * .3f, oc)
         }
         center()
     }
 }
 
-/** আয় ও খরচের দুই লাইনের গ্রাফ: লাইন আঁকা হয়, ডট লাফিয়ে আসে, একটা আলোর বিন্দু লাইন ধরে চলে */
+/** আয় ও খরচের দুই লাইনের গ্রাফ: লাইন আঁকা হয়, ডট লাফিয়ে আসে, আলোর বিন্দু লাইন ধরে চলে। area/glow/todayLabel দিলে নতুন ভিজুয়াল লুক। */
 @Composable
 fun TwoLineChart(income: List<Double>, expense: List<Double>, labels: List<String>, modifier: Modifier = Modifier,
                  incomeColor: Color = Color.White, expenseColor: Color = Pink, gridColor: Color = Color.White.copy(alpha = .22f),
-                 labelColor: Color = Sky100, dotFill: Color = Sky700) {
+                 labelColor: Color = Sky100, dotFill: Color = Sky700, area: Boolean = false, glow: Boolean = false, todayLabel: String? = null) {
     var go by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { go = true }
     val p by animateFloatAsState(if (go) 1f else 0f, tween(1800, 500, FastOutSlowInEasing), label = "chart")
     val trav by rememberInfiniteTransition(label = "trav").animateFloat(0f, 1f, infiniteRepeatable(tween(7000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "t")
+    val maxV = (income + expense).maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
     Column(modifier) {
-        Canvas(Modifier.fillMaxWidth().weight(1f)) {
-            val n = income.size
-            if (n < 2) return@Canvas
-            val maxV = (income + expense).maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
-            val padX = 20.dp.toPx(); val top = 8.dp.toPx(); val h = size.height - top
-            fun pt(i: Int, v: Double) = Offset(padX + i * (size.width - 2 * padX) / (n - 1), top + h - (v / maxV).toFloat() * (h - 4.dp.toPx()))
-            for (g in 0..2) drawLine(gridColor, Offset(padX, top + h * g / 2), Offset(size.width - padX, top + h * g / 2), 1.dp.toPx())
-            fun line(vals: List<Double>, c: Color): Path {
-                val path = Path()
-                vals.forEachIndexed { i, v -> val o = pt(i, v); if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y) }
-                val pm = PathMeasure(); pm.setPath(path, false)
-                val seg = Path(); pm.getSegment(0f, pm.length * p, seg, true)
-                drawPath(seg, c, style = Stroke(2.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                vals.forEachIndexed { i, v ->
-                    if (i.toFloat() / (n - 1) <= p) { drawCircle(dotFill, 4.dp.toPx(), pt(i, v)); drawCircle(c, 4.dp.toPx(), pt(i, v), style = Stroke(2.dp.toPx())) }
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val hDp = maxHeight
+            Canvas(Modifier.fillMaxSize()) {
+                val n = income.size
+                if (n < 2) return@Canvas
+                val padX = 20.dp.toPx(); val top = 8.dp.toPx(); val h = size.height - top
+                fun pt(i: Int, v: Double) = Offset(padX + i * (size.width - 2 * padX) / (n - 1), top + h - (v / maxV).toFloat() * (h - 4.dp.toPx()))
+                for (g in 0..2) drawLine(gridColor, Offset(padX, top + h * g / 2), Offset(size.width - padX, top + h * g / 2), 1.dp.toPx())
+                if (area) {
+                    val ap = Path().apply {
+                        moveTo(pt(0, income[0]).x, top + h)
+                        income.forEachIndexed { i, v -> lineTo(pt(i, v).x, pt(i, v).y) }
+                        lineTo(pt(n - 1, income[n - 1]).x, top + h); close()
+                    }
+                    drawPath(ap, Brush.verticalGradient(listOf(incomeColor.copy(alpha = .34f * p), Color.Transparent), startY = top, endY = top + h))
                 }
-                return path
+                fun line(vals: List<Double>, c: Color): Path {
+                    val path = Path()
+                    vals.forEachIndexed { i, v -> val o = pt(i, v); if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y) }
+                    val pm = PathMeasure(); pm.setPath(path, false)
+                    val seg = Path(); pm.getSegment(0f, pm.length * p, seg, true)
+                    if (glow) drawPath(seg, c.copy(alpha = .22f), style = Stroke(7.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    drawPath(seg, c, style = Stroke(2.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    vals.forEachIndexed { i, v ->
+                        if (i.toFloat() / (n - 1) <= p) {
+                            val r = if (i == n - 1) 4.6.dp.toPx() else 3.4.dp.toPx()
+                            drawCircle(dotFill, r, pt(i, v)); drawCircle(c, r, pt(i, v), style = Stroke(2.dp.toPx()))
+                        }
+                    }
+                    return path
+                }
+                if (expense.isNotEmpty()) line(expense, expenseColor)
+                val ip = line(income, incomeColor)
+                if (p >= .99f) {
+                    val pm = PathMeasure(); pm.setPath(ip, false)
+                    val pos = pm.getPosition(pm.length * trav)
+                    drawCircle(incomeColor.copy(alpha = .3f), 9.dp.toPx(), pos)
+                    drawCircle(incomeColor, 4.5.dp.toPx(), pos)
+                }
             }
-            if (expense.isNotEmpty()) line(expense, expenseColor)
-            val ip = line(income, incomeColor)
-            if (p >= .99f) {
-                val pm = PathMeasure(); pm.setPath(ip, false)
-                val pos = pm.getPosition(pm.length * trav)
-                drawCircle(incomeColor.copy(alpha = .3f), 9.dp.toPx(), pos)
-                drawCircle(incomeColor, 4.5.dp.toPx(), pos)
+            if (todayLabel != null && income.size >= 2) {
+                val top = 8.dp
+                val h = hDp - top
+                val y = top + h - (h - 4.dp) * (income.last() / maxV).toFloat()
+                Text(todayLabel, Modifier.align(Alignment.TopEnd).padding(end = 28.dp).offset(y = (y - 20.dp).coerceAtLeast(0.dp)),
+                    color = incomeColor, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
-            labels.forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp, color = labelColor) }
+            labels.forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp, lineHeight = 16.sp, color = labelColor) }
         }
     }
 }

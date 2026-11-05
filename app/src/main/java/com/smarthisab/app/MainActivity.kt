@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
     private val vm: AppVm by viewModels {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = AppVm((application as App).repo) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = AppVm((application as App).repo, (application as App).weather) as T
         }
     }
 
