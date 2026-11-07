@@ -1,7 +1,13 @@
 package com.smarthisab.app.data
 
+import android.content.Context
+import com.russhwolf.settings.SharedPreferencesSettings
 import com.smarthisab.app.BuildConfig
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.MemoryCodeVerifierCache
+import io.github.jan.supabase.auth.MemorySessionManager
+import io.github.jan.supabase.auth.SettingsCodeVerifierCache
+import io.github.jan.supabase.auth.SettingsSessionManager
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
@@ -13,9 +19,20 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 
-fun buildSupabase() = createSupabaseClient(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY) {
+fun buildSupabase(context: Context? = null) = createSupabaseClient(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY) {
     defaultSerializer = KotlinXSerializer(Json { ignoreUnknownKeys = true; encodeDefaults = true })
-    install(Auth) { scheme = "smarthisab"; host = "auth" }
+    install(Auth) {
+        scheme = "smarthisab"
+        host = "auth"
+        if (context != null) {
+            val sp = SharedPreferencesSettings(context.getSharedPreferences("smarthisab_auth", Context.MODE_PRIVATE))
+            sessionManager = SettingsSessionManager(settings = sp)
+            codeVerifierCache = SettingsCodeVerifierCache(settings = sp)
+        } else {
+            sessionManager = MemorySessionManager()
+            codeVerifierCache = MemoryCodeVerifierCache()
+        }
+    }
     install(Postgrest)
     install(Realtime)
 }
