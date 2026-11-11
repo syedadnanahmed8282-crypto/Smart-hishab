@@ -39,7 +39,7 @@ class AppVm(val repo: Repo, val wx: WeatherService) : ViewModel() {
     val weather = wx.state
     val weatherLoading = wx.loading
     init { viewModelScope.launch { wx.loadCache() } }
-    fun refreshWeather(force: Boolean = false) { viewModelScope.launch { wx.refresh(force) } }
+    fun refreshWeather(force: Boolean = false, live: Boolean = false) { viewModelScope.launch { wx.refresh(force, live) } }
 
     init {
         viewModelScope.launch {

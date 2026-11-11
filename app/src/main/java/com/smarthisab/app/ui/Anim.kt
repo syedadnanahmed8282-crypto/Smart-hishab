@@ -63,8 +63,15 @@ fun Modifier.glossy(corner: Dp = 18.dp): Modifier = drawWithContent {
     drawRoundRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .14f)), startY = size.height * .6f, endY = size.height), cornerRadius = cr)
 }
 
-// ---------- ডিজাইনের আইকন (মকআপের সাথে একই লাইন-আইকন) ----------
-private fun circle(cx: Int, cy: Int, r: Int) = "M${cx - r} $cy a$r $r 0 1 0 ${2 * r} 0 a$r $r 0 1 0 ${-2 * r} 0 z "
+private fun circle(cx: Number, cy: Number, r: Number): String {
+    val x = cx.toDouble(); val y = cy.toDouble(); val rad = r.toDouble()
+    val radStr = if (rad % 1.0 == 0.0) rad.toInt().toString() else rad.toString()
+    val dStr = if ((2 * rad) % 1.0 == 0.0) (2 * rad).toInt().toString() else (2 * rad).toString()
+    val mdStr = if ((-2 * rad) % 1.0 == 0.0) (-2 * rad).toInt().toString() else (-2 * rad).toString()
+    val xDiffStr = if ((x - rad) % 1.0 == 0.0) (x - rad).toInt().toString() else (x - rad).toString()
+    val yStr = if (y % 1.0 == 0.0) y.toInt().toString() else y.toString()
+    return "M$xDiffStr $yStr a$radStr $radStr 0 1 0 $dStr 0 a$radStr $radStr 0 1 0 $mdStr 0 z "
+}
 
 object Ic {
     val home = "M3 11 l9 -8 l9 8 v9 a1 1 0 0 1 -1 1 h-5 v-6 H9 v6 H4 a1 1 0 0 1 -1 -1 z"
@@ -83,6 +90,24 @@ object Ic {
     val eye = "M2 12 s4 -7 10 -7 s10 7 10 7 s-4 7 -10 7 s-10 -7 -10 -7 z " + circle(12, 12, 3)
     val eyeOff = "M2 12 s4 -7 10 -7 s10 7 10 7 s-4 7 -10 7 s-10 -7 -10 -7 z " + circle(12, 12, 3) + "M4 4 l16 16"
     val sun = circle(12, 12, 4) + "M12 2 v2 M12 20 v2 M2 12 h2 M20 12 h2 M4.9 4.9 l1.4 1.4 M17.7 17.7 l1.4 1.4 M4.9 19.1 l1.4 -1.4 M17.7 6.3 l1.4 -1.4"
+    val target = "M3 17 l6 -6 l4 4 l8 -8 M15 7 h6 v6"
+    val gauge = "M3 17 a9 9 0 0 1 18 0 M12 17 l4 -5"
+    val coin = "M12 3 v18 M16.5 7 c-1 -1.8 -2.8 -2.5 -4.5 -2.5 c-2.5 0 -4 1.2 -4 3 c0 4 8.5 2 8.5 6 c0 1.8 -1.8 3 -4.5 3 c-2 0 -3.7 -0.8 -4.5 -2.5"
+    val box = "M21 8 l-9 -5 l-9 5 v8 l9 5 l9 -5 z M3 8 l9 5 l9 -5 M12 13 v8"
+    val csun = "M7 19 a4 4 0 0 1 -0.5 -7.97 A5.5 5.5 0 0 1 17.5 12 a3.5 3.5 0 0 1 -0.5 7 z M9 5 l1 1.5 M4 8 l1.7 0.6 M14.5 4 l-0.3 1.8"
+    val drop = "M12 3 s6 6.5 6 11 a6 6 0 0 1 -12 0 c0 -4.5 6 -11 6 -11 z"
+    val wind = "M3 8 h11 a3 3 0 1 0 -3 -3 M3 12 h15 a3 3 0 1 1 -3 3 M3 16 h8"
+    val rain = "M7 15 a4 4 0 0 1 -0.5 -7.97 A5.5 5.5 0 0 1 17 6 a4.5 4.5 0 0 1 0.5 9 z M8 18 l-1 2 M12 18 l-1 2 M16 18 l-1 2"
+    val leaf = "M5 19 C5 10 11 4 20 4 c0 9 -6 15 -15 15 z M5 19 c3 -6 6 -9 11 -11"
+    val dial = circle(12, 12, 8) + "M12 12 l4 -3"
+    val up = "M12 19 V5 M5 12 l7 -7 l7 7"
+    val pin = "M12 21 s-7 -6.2 -7 -11.5 a7 7 0 0 1 14 0 C19 14.8 12 21 12 21 z " + circle(12, 9.5, 2.5)
+    val chevR = "M9 6 l6 6 l-6 6"
+    val locate = circle(12, 12, 6) + "M12 2 v4 M12 18 v4 M2 12 h4 M18 12 h4"
+    val down = "M3 7 l6 6 l4 -4 l8 8 M15 17 h6 v-6"
+    val bulb = "M9 18 h6 M10 21 h4 M12 3 a6 6 0 0 0 -3.5 10.9 c0.6 0.5 1 1.2 1 2.1 h5 c0 -0.9 0.4 -1.6 1 -2.1 A6 6 0 0 0 12 3 z"
+    val file = "M7 3 h7 l5 5 v11 a2 2 0 0 1 -2 2 H7 a2 2 0 0 1 -2 -2 V5 a2 2 0 0 1 2 -2 z M14 3 v5 h5 M9 13 h6 M9 17 h6"
+    val dl = "M12 4 v11 M7 11 l5 5 l5 -5 M4 20 h16"
     val mail = "M6 5 h12 a3 3 0 0 1 3 3 v8 a3 3 0 0 1 -3 3 H6 a3 3 0 0 1 -3 -3 V8 a3 3 0 0 1 3 -3 z M3 8 l9 6 l9 -6"
     val user = circle(12, 8, 4) + "M4 21 a8 8 0 0 1 16 0"
     val key = circle(8, 15, 4) + "M11 12 l9 -9 M16 7 l3 3"
