@@ -1,6 +1,7 @@
 package com.smarthisab.app.data
 
 import android.util.Log
+import com.smarthisab.app.domain.Cats
 import com.smarthisab.app.domain.Fmt
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -51,6 +52,33 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
     suspend fun getKv(k: String): String? = kd.get(k)
     suspend fun setKv(k: String, v: String) = kd.put(KvE(k, v))
     suspend fun removeKv(k: String) = kd.remove(k)
+
+    // ---------- হিসাবের ধরন ও খাত ----------
+    /** প্রতিটা ধরনের বর্তমান ফোল্ডার আলাদা মনে থাকে ("folder" = মালের হিসাব, আগের ডাটার সাথে মিল রেখে) */
+    private fun folderKey(mode: String) = if (mode == "main") "folder" else "folder_$mode"
+    suspend fun setMode(mode: String) = kd.put(KvE("mode", mode))
+
+    fun customCats(mode: String, kind: String): Flow<List<String>> =
+        kd.observe("cats_${mode}_$kind").map { v -> v?.split("\n")?.filter { it.isNotBlank() } ?: emptyList() }
+
+    private fun defaultCats(kind: String) = if (kind == "income") Cats.income else Cats.expense
+
+    suspend fun addCat(mode: String, kind: String, name: String) {
+        requireEditable()
+        val n = name.trim().take(40)
+        if (n.isEmpty()) throw AppError("খাতের নাম দিন")
+        val key = "cats_${mode}_$kind"
+        val cur = kd.get(key)?.split("\n")?.filter { it.isNotBlank() } ?: emptyList()
+        if (n in defaultCats(kind) || n in cur) throw AppError("এই খাত আগেই আছে")
+        kd.put(KvE(key, (cur + n).joinToString("\n")))
+    }
+
+    suspend fun removeCat(mode: String, kind: String, name: String) {
+        requireEditable()
+        val key = "cats_${mode}_$kind"
+        val cur = kd.get(key)?.split("\n")?.filter { it.isNotBlank() } ?: emptyList()
+        kd.put(KvE(key, (cur - name).joinToString("\n")))
+    }
 
     // ---------- লগইন ----------
     val authState: Flow<AuthState> = supabase.auth.sessionStatus.map {
@@ -121,12 +149,12 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
     }
 
     // ---------- ফোল্ডার (কাজের চক্র) ----------
-    suspend fun createFolder(name: String, start: LocalDate, expectedEnd: LocalDate?, goal: Double?, limit: Double?, wage: Double, target: Int?): String {
+    suspend fun createFolder(name: String, start: LocalDate, expectedEnd: LocalDate?, goal: Double?, limit: Double?, wage: Double, target: Int?, mode: String = "main"): String {
         requireEditable()
         if (name.isBlank()) throw AppError("ফোল্ডারের নাম দিন")
         val id = UUID.randomUUID().toString()
-        fd.upsert(FolderE(id, name.trim(), start.toEpochDay(), expectedEnd?.toEpochDay(), null, false, goal, limit, wage, target))
-        kd.put(KvE("folder", id))
+        fd.upsert(FolderE(id, name.trim(), start.toEpochDay(), expectedEnd?.toEpochDay(), null, false, goal, limit, wage, target, mode = mode))
+        kd.put(KvE(folderKey(mode), id))
         return id
     }
     suspend fun updateFolder(f: FolderE) {
@@ -135,7 +163,7 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
         if (cur.closed && (cur.startDay != f.startDay || cur.endDay != f.endDay)) throw AppError("সমাপ্ত ফোল্ডারের তারিখ বদলানো যাবে না")
         fd.upsert(f.copy(updatedAt = now(), dirty = true))
     }
-    suspend fun selectFolder(id: String) = kd.put(KvE("folder", id))
+    suspend fun selectFolder(id: String) { val f = fd.get(id); kd.put(KvE(folderKey(f?.mode ?: "main"), id)) }
     suspend fun closeFolder(id: String, end: LocalDate?) {
         requireEditable()
         val f = fd.get(id) ?: return
@@ -155,20 +183,23 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
         val ts = now()
         fd.upsert(f.copy(deletedAt = ts, updatedAt = ts, dirty = true))
         ed.ofFolder(id).forEach { ed.upsert(it.copy(deletedAt = ts, updatedAt = ts, dirty = true)) }
-        if (kd.get("folder") == id) kd.remove("folder")
+        val key = folderKey(f.mode)
+        if (kd.get(key) == id) kd.remove(key)
     }
-    suspend fun deleteAllData() {
+    /** শুধু বর্তমান ধরনের তথ্য মোছে — অন্য ধরনের ফোল্ডার ও এন্ট্রি অক্ষত থাকে */
+    suspend fun deleteAllData(mode: String) {
         requireEditable()
         val ts = now()
-        fd.all().filter { it.deletedAt == null }.forEach { fd.upsert(it.copy(deletedAt = ts, updatedAt = ts, dirty = true)) }
-        ed.all().filter { it.deletedAt == null }.forEach { ed.upsert(it.copy(deletedAt = ts, updatedAt = ts, dirty = true)) }
-        kd.remove("folder")
+        fd.all().filter { it.deletedAt == null && it.mode == mode }.forEach { fd.upsert(it.copy(deletedAt = ts, updatedAt = ts, dirty = true)) }
+        ed.all().filter { it.deletedAt == null && it.mode == mode }.forEach { ed.upsert(it.copy(deletedAt = ts, updatedAt = ts, dirty = true)) }
+        kd.remove(folderKey(mode))
     }
 
     // ---------- দৈনিক এন্ট্রি ----------
     suspend fun saveEntry(folderId: String, id: String?, day: LocalDate, qty: Int, expense: Double, note: String?) {
         val f = fd.get(folderId) ?: throw AppError("ফোল্ডার পাওয়া যায়নি")
         requireOpen(f)
+        if (f.mode != "main") throw AppError("এই ফোল্ডারের জন্য আয়/খরচের এন্ট্রি দিতে হবে")
         // যেকোনো তারিখ দেওয়া যায়; আগের তারিখ হলে ফোল্ডারের শুরুর তারিখ সেই দিনে সরে আসে
         if (day.toEpochDay() < f.startDay) fd.upsert(f.copy(startDay = day.toEpochDay(), updatedAt = now(), dirty = true))
         if (qty < 0 || expense < 0) throw AppError("সংখ্যা ঋণাত্মক হতে পারে না")
@@ -177,6 +208,19 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
         val old = id?.let { ed.get(it) }
         val n = note?.trim()?.takeIf { it.isNotEmpty() }
         ed.upsert(EntryE(id ?: UUID.randomUUID().toString(), folderId, day.toEpochDay(), qty, expense, old?.rate ?: f.wageRate, n, null, now(), true, old?.version ?: 0))
+    }
+    /** দৈনিক খরচ ও আয়-ব্যয়ের এন্ট্রি: একদিনে একাধিক এন্ট্রি চলে। দৈনিক খরচে সবসময় খরচ। */
+    suspend fun saveMoneyEntry(folderId: String, id: String?, day: LocalDate, kind: String, amount: Double, category: String?, note: String?) {
+        val f = fd.get(folderId) ?: throw AppError("ফোল্ডার পাওয়া যায়নি")
+        requireOpen(f)
+        if (f.mode == "main") throw AppError("মালের হিসাবে মাল দিয়ে এন্ট্রি দিন")
+        if (amount <= 0) throw AppError("পরিমাণ দিন")
+        val k = if (f.mode == "alt" || kind != "income") "expense" else "income"
+        if (day.toEpochDay() < f.startDay) fd.upsert(f.copy(startDay = day.toEpochDay(), updatedAt = now(), dirty = true))
+        val old = id?.let { ed.get(it) }
+        val cat = category?.trim()?.takeIf { it.isNotEmpty() }
+        val n = note?.trim()?.takeIf { it.isNotEmpty() }
+        ed.upsert(EntryE(id ?: UUID.randomUUID().toString(), folderId, day.toEpochDay(), 0, 0.0, 0.0, n, null, now(), true, old?.version ?: 0, f.mode, k, cat, amount))
     }
     suspend fun deleteEntry(id: String): Boolean {
         val e = ed.get(id) ?: return false
@@ -308,7 +352,7 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
 
     /** সম্পূর্ণ হওয়া সপ্তাহের রিপোর্ট সার্ভারে সংরক্ষণ (ব্যর্থ হলে সমস্যা নেই) */
     private suspend fun snapshots() {
-        for (f in fd.all().filter { it.deletedAt == null && !it.dirty }) {
+        for (f in fd.all().filter { it.deletedAt == null && !it.dirty && it.mode == "main" }) {
             try {
                 supabase.postgrest.rpc("snapshot_weekly_reports", buildJsonObject { put("p_folder", f.id) })
             } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w("Sync", "snapshot: ${e.message}") }

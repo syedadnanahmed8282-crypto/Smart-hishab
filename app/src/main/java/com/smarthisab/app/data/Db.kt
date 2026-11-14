@@ -21,6 +21,8 @@ data class FolderE(
     val updatedAt: Long = System.currentTimeMillis(),
     val dirty: Boolean = true,
     val version: Int = 0,
+    /** main = মালের হিসাব, alt = দৈনিক খরচ, prem = আয়-ব্যয় */
+    val mode: String = "main",
 )
 
 @Entity(tableName = "entries", indices = [Index("folderId", "day")])
@@ -36,6 +38,13 @@ data class EntryE(
     val updatedAt: Long = System.currentTimeMillis(),
     val dirty: Boolean = true,
     val version: Int = 0,
+    /** ফোল্ডারের ধরন (main/alt/prem) — এন্ট্রিতেও রাখা হয়, যাতে ধরন অনুযায়ী আলাদা থাকে */
+    val mode: String = "main",
+    /** শুধু alt/prem: "income" বা "expense" */
+    val kind: String = "expense",
+    val category: String? = null,
+    /** শুধু alt/prem: এন্ট্রির টাকার পরিমাণ */
+    val amount: Double = 0.0,
 )
 
 @Entity(tableName = "kv")
@@ -57,7 +66,7 @@ interface EntryDao {
     @Query("SELECT * FROM entries WHERE deletedAt IS NULL ORDER BY day DESC")
     fun observe(): Flow<List<EntryE>>
     @Query("SELECT * FROM entries WHERE id = :id") suspend fun get(id: String): EntryE?
-    @Query("SELECT * FROM entries WHERE folderId = :f AND day = :d AND deletedAt IS NULL LIMIT 1")
+    @Query("SELECT * FROM entries WHERE folderId = :f AND day = :d AND deletedAt IS NULL AND mode = 'main' LIMIT 1")
     suspend fun byDay(f: String, d: Long): EntryE?
     @Query("SELECT * FROM entries WHERE folderId = :f AND deletedAt IS NULL") suspend fun ofFolder(f: String): List<EntryE>
     @Query("SELECT * FROM entries WHERE dirty = 1") suspend fun dirty(): List<EntryE>
@@ -84,7 +93,18 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-@Database(entities = [FolderE::class, EntryE::class, KvE::class], version = 2, exportSchema = false)
+/** তিন ধরনের হিসাব: আগের সব ফোল্ডার ও এন্ট্রি নিজে থেকে 'main' (মালের হিসাব) হয়ে যায়, কিছু মোছা বা বদলানো হয় না */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE folders ADD COLUMN mode TEXT NOT NULL DEFAULT 'main'")
+        db.execSQL("ALTER TABLE entries ADD COLUMN mode TEXT NOT NULL DEFAULT 'main'")
+        db.execSQL("ALTER TABLE entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'expense'")
+        db.execSQL("ALTER TABLE entries ADD COLUMN category TEXT")
+        db.execSQL("ALTER TABLE entries ADD COLUMN amount REAL NOT NULL DEFAULT 0")
+    }
+}
+
+@Database(entities = [FolderE::class, EntryE::class, KvE::class], version = 3, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun folders(): FolderDao
     abstract fun entries(): EntryDao

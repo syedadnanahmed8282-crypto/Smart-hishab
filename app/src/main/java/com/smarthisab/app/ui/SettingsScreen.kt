@@ -28,7 +28,9 @@ import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import com.smarthisab.app.data.AuthState
 import com.smarthisab.app.data.FolderE
+import com.smarthisab.app.domain.Cats
 import com.smarthisab.app.domain.Fmt
+import com.smarthisab.app.domain.Mode
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -41,6 +43,10 @@ private val RowInk = Color(0xFF0F172A)
 @Composable
 fun SettingsScreen(vm: AppVm, nav: NavHostController) {
     val f by vm.current.collectAsState()
+    val mode by vm.mode.collectAsState()
+    val expCustom by vm.expenseCustom.collectAsState()
+    val incCustom by vm.incomeCustom.collectAsState()
+    var catsDlg by remember { mutableStateOf(false) }
     val viewer by vm.viewer.collectAsState()
     val auth by vm.auth.collectAsState()
     val syncing by vm.syncing.collectAsState()
@@ -102,16 +108,29 @@ fun SettingsScreen(vm: AppVm, nav: NavHostController) {
                 SRow(Ic.eye, Color(0xFFEEF2FF), Indigo, "ভিউয়ার মোড", if (viewer) "চালু · শুধু দেখা যাচ্ছে, সিঙ্ক চলছে" else "শুধু দেখা যাবে, কিছু বদলানো যাবে না", chevron = false, divider = false,
                     trailing = { Switch(viewer, { if (viewer) pinExit = true else pinSet = true }, colors = SwitchDefaults.colors(checkedTrackColor = Indigo)) })
             }
-            // ৪) হিসাব (লক্ষ্য, সীমা, রেট)
+            // ৪) হিসাবের ধরন: প্রতিটার ফোল্ডার, এন্ট্রি ও খাত আলাদা
+            Label("হিসাবের ধরন")
+            Group(3) {
+                Mode.entries.forEachIndexed { i, m ->
+                    if (i > 0) HorizontalDivider(Modifier.padding(start = 58.dp), color = Line)
+                    ModeRow(m, m == mode) { if (m != mode) vm.setMode(m) }
+                }
+            }
+            Text("প্রতিটা ধরনের ফোল্ডার, এন্ট্রি ও খাত আলাদা। ধরন বদলালে অন্যটার তথ্য যেমন ছিল তেমনই থাকে।", Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 12.sp, lineHeight = 17.sp, color = Gray)
+            // ৫) হিসাব (লক্ষ্য, সীমা, রেট) — ধরন অনুযায়ী
             Label("হিসাব")
             Group(3) {
                 if (folder == null) SRow(Ic.folder, Sky100, Sky700, "ফোল্ডার তৈরি করুন", "লক্ষ্য ও সীমা ঠিক করতে আগে একটা ফোল্ডার লাগবে", divider = false) { nav.navigate("newfolder") }
                 else {
                     val lock = { vm.say("ভিউয়ার মোডে বদলানো যাবে না") }
-                    SRow(Ic.target, Sky100, Sky700, "মাসিক আয়ের লক্ষ্য", null, folder.incomeGoal?.let { Fmt.taka(it) } ?: "ঠিক করুন", divider = false) { if (viewer) lock() else edit = "goal" }
-                    SRow(Ic.gauge, Color(0xFFFFF1F2), Rose, "মাসিক খরচের সীমা", null, folder.expenseLimit?.let { Fmt.taka(it) } ?: "ঠিক করুন") { if (viewer) lock() else edit = "limit" }
-                    SRow(Ic.coin, Color(0xFFECFDF5), Green, "মজুরি রেট", "প্রতি ১০০ পিস, নতুন এন্ট্রির জন্য", Fmt.taka(folder.wageRate)) { if (viewer) lock() else edit = "wage" }
-                    SRow(Ic.box, Color(0xFFFEF3C7), Amber, "দৈনিক টার্গেট", null, folder.dailyTarget?.let { "${Fmt.bn(it)} পিস" } ?: "ঠিক করুন") { if (viewer) lock() else edit = "target" }
+                    if (mode != Mode.ALT) SRow(Ic.target, Sky100, Sky700, "মাসিক আয়ের লক্ষ্য", null, folder.incomeGoal?.let { Fmt.taka(it) } ?: "ঠিক করুন", divider = false) { if (viewer) lock() else edit = "goal" }
+                    SRow(Ic.gauge, Color(0xFFFFF1F2), Rose, "মাসিক খরচের সীমা", null, folder.expenseLimit?.let { Fmt.taka(it) } ?: "ঠিক করুন", divider = mode != Mode.ALT) { if (viewer) lock() else edit = "limit" }
+                    if (mode == Mode.MAIN) SRow(Ic.coin, Color(0xFFECFDF5), Green, "মজুরি রেট", "প্রতি ১০০ পিস, নতুন এন্ট্রির জন্য", Fmt.taka(folder.wageRate)) { if (viewer) lock() else edit = "wage" }
+                    if (mode == Mode.MAIN) SRow(Ic.box, Color(0xFFFEF3C7), Amber, "দৈনিক টার্গেট", null, folder.dailyTarget?.let { "${Fmt.bn(it)} পিস" } ?: "ঠিক করুন") { if (viewer) lock() else edit = "target" }
+                    if (mode != Mode.MAIN) SRow(
+                        Ic.tag, Color(0xFFEEF2FF), Indigo, "খাত পরিচালনা", "নিজের খাত যোগ বা মুছুন",
+                        "${Fmt.bn(Cats.expense.size + expCustom.size + if (mode == Mode.PREMIUM) Cats.income.size + incCustom.size else 0)}টা",
+                    ) { if (viewer) lock() else catsDlg = true }
                 }
             }
             // ৫) ক্লাউড
@@ -140,7 +159,7 @@ fun SettingsScreen(vm: AppVm, nav: NavHostController) {
                     SRow(Ic.out, Color(0xFFFFF1F2), Rose, "লগআউট", null, chevron = false, labelColor = Rose, dim = viewer) { if (viewer) vm.say("ভিউয়ার মোডে লগআউট বন্ধ") else logoutAsk = true }
                     first = false
                 }
-                SRow(Ic.trash, Color(0xFFFFF1F2), Rose, "সব হিসাবের তথ্য মুছুন", null, chevron = false, labelColor = Rose, divider = !first, dim = viewer) { if (viewer) vm.say("ভিউয়ার মোডে মোছা বন্ধ") else deleteAsk = true }
+                SRow(Ic.trash, Color(0xFFFFF1F2), Rose, "এই ধরনের সব তথ্য মুছুন", null, chevron = false, labelColor = Rose, divider = !first, dim = viewer) { if (viewer) vm.say("ভিউয়ার মোডে মোছা বন্ধ") else deleteAsk = true }
             }
             Text("স্মার্ট হিসাব · সংস্করণ ০.১.০", Modifier.fillMaxWidth().padding(vertical = 18.dp), fontSize = 12.sp, lineHeight = 16.sp, color = Color(0xFF94A3B8), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
@@ -160,6 +179,7 @@ fun SettingsScreen(vm: AppVm, nav: NavHostController) {
             "target" -> EditValueDialog("দৈনিক টার্গেট", "পিস", fo.dailyTarget?.toString() ?: "", "পিস", { edit = null }) { vm.updateFolder(fo.copy(dailyTarget = Fmt.parseInt(it).takeIf { v -> v > 0 }), "সংরক্ষিত হয়েছে") }
         }
     }
+    if (catsDlg) CatsDialog(vm, mode, expCustom, incCustom) { catsDlg = false }
     if (pinSet) PinDialog("ভিউয়ার মোড চালু করবেন?", "বন্ধ করার জন্য ৪ সংখ্যার PIN ঠিক করুন।\n\nযা পারবেন: সব তথ্য ও রিপোর্ট দেখা, সিঙ্ক।\nযা পারবেন না: নতুন এন্ট্রি, সম্পাদনা, মোছা, লগআউট, সেটিংস বদল।", "চালু করুন",
         onDismiss = { pinSet = false }) { vm.enableViewer(it) { pinSet = false } }
     if (pinExit) {
@@ -176,8 +196,8 @@ fun SettingsScreen(vm: AppVm, nav: NavHostController) {
         text = { Text("আগে সব তথ্য ক্লাউডে সিঙ্ক হবে। আবার লগইন করলে সব ফিরে পাবেন।", color = Slate) },
         confirmButton = { TextButton({ logoutAsk = false; vm.logout() }) { Text("লগআউট", color = Rose, fontWeight = FontWeight.Bold) } },
         dismissButton = { TextButton({ logoutAsk = false }) { Text("বাতিল") } })
-    if (deleteAsk) AlertDialog({ deleteAsk = false }, title = { Text("সব হিসাব মুছবেন?", fontWeight = FontWeight.Bold) },
-        text = { Text("সব ফোল্ডার ও এন্ট্রি মুছে যাবে, ক্লাউড থেকেও। এটা ফেরানো যাবে না।", color = Slate) },
+    if (deleteAsk) AlertDialog({ deleteAsk = false }, title = { Text("এই ধরনের সব হিসাব মুছবেন?", fontWeight = FontWeight.Bold) },
+        text = { Text("${mode.label}-এর সব ফোল্ডার ও এন্ট্রি মুছে যাবে, ক্লাউড থেকেও। অন্য দুই ধরনের তথ্য থাকবে। এটা ফেরানো যাবে না।", color = Slate) },
         confirmButton = { TextButton({ deleteAsk = false; vm.deleteAll() }) { Text("চিরতরে মুছুন", color = Rose, fontWeight = FontWeight.Bold) } },
         dismissButton = { TextButton({ deleteAsk = false }) { Text("বাতিল") } })
 }

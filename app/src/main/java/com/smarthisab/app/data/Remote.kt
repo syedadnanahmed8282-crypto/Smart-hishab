@@ -52,6 +52,7 @@ data class FolderUp(
     @SerialName("daily_target_pcs") val dailyTargetPcs: Int?,
     @SerialName("deleted_at") val deletedAt: String?,
     @SerialName("base_version") val baseVersion: Int,
+    val mode: String = "main",
 )
 
 @Serializable
@@ -69,6 +70,7 @@ data class FolderDown(
     @SerialName("deleted_at") val deletedAt: String? = null,
     @SerialName("updated_at") val updatedAt: String,
     val version: Int = 1,
+    val mode: String = "main",
 )
 
 @Serializable
@@ -83,6 +85,10 @@ data class EntryUp(
     val note: String?,
     @SerialName("deleted_at") val deletedAt: String?,
     @SerialName("base_version") val baseVersion: Int,
+    val mode: String = "main",
+    val kind: String = "expense",
+    val category: String? = null,
+    val amount: Double = 0.0,
 )
 
 @Serializable
@@ -97,6 +103,10 @@ data class EntryDown(
     @SerialName("deleted_at") val deletedAt: String? = null,
     @SerialName("updated_at") val updatedAt: String,
     val version: Int = 1,
+    val mode: String = "main",
+    val kind: String = "expense",
+    val category: String? = null,
+    val amount: Double = 0.0,
 )
 
 @Serializable data class PushErr(val id: String, val msg: String = "")
@@ -110,20 +120,21 @@ fun FolderE.toUp(uid: String, forceRunning: Boolean = false, skipCheck: Boolean 
     expectedEndDay?.let { LocalDate.ofEpochDay(it).toString() },
     if (closed && !forceRunning) endDay?.let { LocalDate.ofEpochDay(it).toString() } else null,
     if (closed && !forceRunning) "closed" else "running",
-    incomeGoal, expenseLimit, wageRate, dailyTarget, iso(deletedAt), if (skipCheck) 0 else version,
+    incomeGoal, expenseLimit, wageRate, dailyTarget, iso(deletedAt), if (skipCheck) 0 else version, mode,
 )
 
 fun FolderDown.toLocal() = FolderE(
     id, name, LocalDate.parse(startDate).toEpochDay(), expectedEndDate?.let { LocalDate.parse(it).toEpochDay() },
     endDate?.let { LocalDate.parse(it).toEpochDay() }, status == "closed", incomeGoal, expenseLimit, wageRate,
-    dailyTargetPcs, deletedAt?.let { parseTs(it) }, parseTs(updatedAt), dirty = false, version = version,
+    dailyTargetPcs, deletedAt?.let { parseTs(it) }, parseTs(updatedAt), dirty = false, version = version, mode = mode,
 )
 
 fun EntryE.toUp(uid: String) = EntryUp(
-    id, uid, folderId, LocalDate.ofEpochDay(day).toString(), quantity, expense, rate, note, iso(deletedAt), version,
+    id, uid, folderId, LocalDate.ofEpochDay(day).toString(), quantity, expense, rate, note, iso(deletedAt), version, mode, kind, category, amount,
 )
 
 fun EntryDown.toLocal() = EntryE(
     id, folderId, LocalDate.parse(entryDate).toEpochDay(), quantity, expense, ratePer100, note,
     deletedAt?.let { parseTs(it) }, parseTs(updatedAt), dirty = false, version = version,
+    mode = mode, kind = kind, category = category, amount = amount,
 )

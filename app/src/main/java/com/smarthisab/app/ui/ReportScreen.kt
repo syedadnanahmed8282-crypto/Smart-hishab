@@ -57,6 +57,7 @@ fun ReportScreen(vm: AppVm, nav: NavHostController) {
     val es by vm.currentEntries.collectAsState()
     val all by vm.entries.collectAsState()
     val folders by vm.folders.collectAsState()
+    val mode by vm.mode.collectAsState()
     var tab by rememberSaveable { mutableStateOf(0) }
     val today = remember { LocalDate.now() }
     val folder = f
@@ -66,7 +67,7 @@ fun ReportScreen(vm: AppVm, nav: NavHostController) {
     Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFFDCEFFB), Pale), endY = 560f))) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 20.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(if (folder != null) "${folder.name} · ${Fmt.bn(Cycle.totalDays(folder, today))} দিন" else "", fontSize = 13.sp, lineHeight = 18.sp, color = Color(0xFF475569), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (folder != null) "${folder.name} · ${mode.label} · ${Fmt.bn(Cycle.totalDays(folder, es, today))} এন্ট্রির দিন" else "", fontSize = 13.sp, lineHeight = 18.sp, color = Color(0xFF475569), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("রিপোর্ট", fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, color = Navy)
             }
             FolderPill(vm, nav, folder)
@@ -82,10 +83,10 @@ fun ReportScreen(vm: AppVm, nav: NavHostController) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (es.isEmpty()) Text("রিপোর্ট দেখতে আগে কিছু হিসাব দিন।", color = Slate)
             else when (tab) {
-                0 -> SummaryTab(folder, es, today) { tab = it }
-                1 -> AnalyticsTab(folder, es, today, prevF, prevEs)
-                2 -> DetailTab(vm, folder, es, today)
-                else -> RecordsTab(folder, es, today, prevF, prevEs)
+                0 -> SummaryTab(mode, folder, es, today) { tab = it }
+                1 -> AnalyticsTab(mode, folder, es, today, prevF, prevEs)
+                2 -> DetailTab(vm, mode, folder, es, today)
+                else -> RecordsTab(mode, folder, es, today, prevF, prevEs)
             }
         }
     }
@@ -105,11 +106,11 @@ private fun axisTop(max: Double): Double {
     return p * (if (m <= 1) 1.0 else if (m <= 2) 2.0 else if (m <= 2.5) 2.5 else if (m <= 5) 5.0 else 10.0) * 3
 }
 
-private fun growthPct(months: List<Block>, weeks: List<Block>): Double? {
-    fun avg(b: Block) = (b.t.income - b.t.expense) / max(1, b.t.days)
+private fun growthPct(months: List<Block>, weeks: List<Block>, mode: Mode = Mode.MAIN): Double? {
+    fun v(b: Block) = (if (mode == Mode.ALT) b.t.expense else b.t.income - b.t.expense) / max(1, b.t.days)
     return when {
-        months.size >= 2 -> Cycle.deltaPct(avg(months.last()), avg(months[months.size - 2]))
-        weeks.size >= 2 -> Cycle.deltaPct(weeks.last().t.profit, weeks[weeks.size - 2].t.profit)
+        months.size >= 2 -> Cycle.deltaPct(v(months.last()), v(months[months.size - 2]))
+        weeks.size >= 2 -> Cycle.deltaPct(v(weeks.last()), v(weeks[weeks.size - 2]))
         else -> null
     }
 }
@@ -189,7 +190,7 @@ private fun ProfitLine(values: List<Double>, labels: List<String>, labelAt: Set<
 
 /** এই চক্র (গাঢ়) বনাম আগের চক্র (হালকা) — সপ্তাহ অনুযায়ী; শেষ বারে টুলটিপ */
 @Composable
-private fun GroupedBars(cur: List<Double>, prev: List<Double>?, labels: List<String>) {
+private fun GroupedBars(cur: List<Double>, prev: List<Double>?, labels: List<String>, curColor: Color = Deep, prevColor: Color = Sky200) {
     val top = axisTop(((cur + (prev ?: emptyList())).maxOrNull() ?: 1.0).coerceAtLeast(1.0))
     var go by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { go = true }
@@ -210,7 +211,7 @@ private fun GroupedBars(cur: List<Double>, prev: List<Double>?, labels: List<Str
                     }
                     for (i in 0 until n) {
                         val cx = (i + .5f) * slot
-                        if (prev != null) { bar(cx - bw - gap, prev[i], Sky200); bar(cx + gap, cur[i], Deep) } else bar(cx - bw / 2, cur[i], Deep)
+                        if (prev != null) { bar(cx - bw - gap, prev[i], prevColor); bar(cx + gap, cur[i], curColor) } else bar(cx - bw / 2, cur[i], curColor)
                     }
                 }
                 val lastC = wDp * ((n - .5f) / n)
@@ -278,26 +279,26 @@ private fun ProgBar(frac: Float, delay: Int = 0) {
 
 // ---------- ১) সংক্ষিপ্ত ----------
 @Composable
-private fun SummaryTab(f: FolderE, es: List<EntryE>, today: LocalDate, onTab: (Int) -> Unit) {
+private fun SummaryTab(mode: Mode, f: FolderE, es: List<EntryE>, today: LocalDate, onTab: (Int) -> Unit) {
     val tot = Cycle.totals(f, es, today)
-    val g = growthPct(Cycle.blocks(f, es, today, 30), Cycle.blocks(f, es, today, 7))
+    val g = growthPct(Cycle.blocks(f, es, today, 30), Cycle.blocks(f, es, today, 7), mode)
     val d14 = Cycle.lastDays(f, es, today, 14)
-    val net = d14.map { it.income - it.expense }
+    val series = d14.map { if (mode == Mode.ALT) it.expense else it.income - it.expense }
     val bob by rememberInfiniteTransition(label = "bob").animateFloat(0f, -3f, infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "b")
     RCard(tint = Color(0xFFEAF6FE), delay = 0) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.graphicsLayer { translationY = bob }.size(58.dp).shadow(10.dp, RoundedCornerShape(18.dp), ambientColor = Sky800, spotColor = Sky800).clip(RoundedCornerShape(18.dp)).background(BtnBrush), contentAlignment = Alignment.Center) {
-                Ico(Ic.target, size = 30.dp, tint = Color.White, sw = 2.2f)
+                Ico(if (mode == Mode.ALT) Ic.wallet else Ic.target, size = 30.dp, tint = Color.White, sw = 2.2f)
             }
             Column(Modifier.weight(1f)) {
-                Text("নিট লাভ বৃদ্ধি", fontSize = 13.sp, lineHeight = 18.sp, color = Gy)
+                Text(if (mode == Mode.ALT) "দিনপ্রতি খরচের পরিবর্তন" else "নিট লাভ বৃদ্ধি", fontSize = 13.sp, lineHeight = 18.sp, color = Gy)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(if (g == null) "—" else "${if (g >= 0) "+" else "−"}${Fmt.bn(abs(g).roundToLong())}%", fontSize = 30.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold, color = Navy, maxLines = 1, softWrap = false)
-                    DeltaChip(g)
+                    DeltaChip(g, goodUp = mode != Mode.ALT)
                 }
-                Text("আগের কাজের মাসের তুলনায় (দিনপ্রতি)", fontSize = 12.sp, lineHeight = 16.sp, color = Gy, maxLines = 2)
+                Text("আগের কাজের মাসের তুলনায় (এন্ট্রির দিন প্রতি)", fontSize = 12.sp, lineHeight = 16.sp, color = Gy, maxLines = 2)
             }
-            Sparkline(net.takeLast(7))
+            Sparkline(series.takeLast(7))
         }
     }
     RCard(delay = 1) {
@@ -307,15 +308,29 @@ private fun SummaryTab(f: FolderE, es: List<EntryE>, today: LocalDate, onTab: (I
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetricTile(Ic.box, Sky100, Sky700, "${Fmt.bn(tot.pieces)}", "মোট মাল", Modifier.weight(1f))
-            MetricTile(Ic.coin, Color(0xFFD1FAE5), Green, Fmt.taka(tot.income), "মোট আয়", Modifier.weight(1f))
-            MetricTile(Ic.down, Color(0xFFFFE4E6), Rose, Fmt.taka(tot.expense), "মোট খরচ", Modifier.weight(1f))
+            when (mode) {
+                Mode.MAIN -> {
+                    MetricTile(Ic.box, Sky100, Sky700, "${Fmt.bn(tot.pieces)}", "মোট মাল", Modifier.weight(1f))
+                    MetricTile(Ic.coin, Color(0xFFD1FAE5), Green, Fmt.taka(tot.income), "মোট আয়", Modifier.weight(1f))
+                    MetricTile(Ic.down, Color(0xFFFFE4E6), Rose, Fmt.taka(tot.expense), "মোট খরচ", Modifier.weight(1f))
+                }
+                Mode.ALT -> {
+                    MetricTile(Ic.down, Color(0xFFFFE4E6), Rose, Fmt.taka(tot.expense), "মোট খরচ", Modifier.weight(1f))
+                    MetricTile(Ic.gauge, Sky100, Sky700, Fmt.taka(tot.avgExpense), "গড়/দিন", Modifier.weight(1f))
+                    MetricTile(Ic.cal, Color(0xFFFEF3C7), Amber, Fmt.bn(tot.days), "এন্ট্রির দিন", Modifier.weight(1f))
+                }
+                Mode.PREMIUM -> {
+                    MetricTile(Ic.up, Color(0xFFD1FAE5), Green, Fmt.taka(tot.income), "মোট আয়", Modifier.weight(1f))
+                    MetricTile(Ic.down, Color(0xFFFFE4E6), Rose, Fmt.taka(tot.expense), "মোট খরচ", Modifier.weight(1f))
+                    MetricTile(Ic.target, Sky100, Sky700, Fmt.taka(tot.profit), "মোট বাকি", Modifier.weight(1f))
+                }
+            }
         }
     }
     RCard(delay = 2) {
-        Text("শেষ ১৪ দিনের নিট লাভ", fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
+        Text(if (mode == Mode.ALT) "শেষ ১৪ এন্ট্রির দিনের খরচ" else "শেষ ১৪ এন্ট্রির দিনের নিট লাভ", fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
         Spacer(Modifier.height(6.dp))
-        ProfitLine(net, d14.map { Fmt.bn(it.date.dayOfMonth) }, setOf(0, 3, 6, 9, 13))
+        ProfitLine(series, d14.map { Fmt.bn(it.date.dayOfMonth) }, setOf(0, 3, 6, 9, 13))
     }
 }
 
@@ -330,7 +345,7 @@ private fun MetricTile(icon: String, bg: Color, fg: Color, value: String, label:
 
 // ---------- ২) বিশ্লেষণ ----------
 @Composable
-private fun AnalyticsTab(f: FolderE, es: List<EntryE>, today: LocalDate, prevF: FolderE?, prevEs: List<EntryE>) {
+private fun MainAnalytics(f: FolderE, es: List<EntryE>, today: LocalDate, prevF: FolderE?, prevEs: List<EntryE>) {
     val tot = Cycle.totals(f, es, today)
     val months = Cycle.blocks(f, es, today, 30)
     val weeks = Cycle.blocks(f, es, today, 7)
@@ -341,7 +356,7 @@ private fun AnalyticsTab(f: FolderE, es: List<EntryE>, today: LocalDate, prevF: 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text("নিট লাভ বিশ্লেষণ", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
         Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).border(1.dp, Bd, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-            Ico(Ic.cal, size = 16.dp, tint = Gy); Text(" ${Fmt.range(Cycle.start(f), Cycle.end(f, today))} ", fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false); Ico(Ic.chev, size = 14.dp, tint = Gy)
+            Ico(Ic.cal, size = 16.dp, tint = Gy); Text(" ${Fmt.range(Cycle.start(f, es), Cycle.end(f, es, today))} ", fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false); Ico(Ic.chev, size = 14.dp, tint = Gy)
         }
     }
     Column {
@@ -390,6 +405,93 @@ private fun AnalyticsTab(f: FolderE, es: List<EntryE>, today: LocalDate, prevF: 
     }
 }
 
+@Composable
+private fun AnalyticsTab(mode: Mode, f: FolderE, es: List<EntryE>, today: LocalDate, prevF: FolderE?, prevEs: List<EntryE>) {
+    if (mode == Mode.MAIN) MainAnalytics(f, es, today, prevF, prevEs) else MoneyAnalytics(mode, f, es, today)
+}
+
+/** দৈনিক খরচ ও আয়-ব্যয়ের বিশ্লেষণ: বার চার্ট, খাত অনুযায়ী ডোনাট, আয়ের উৎস */
+@Composable
+private fun MoneyAnalytics(mode: Mode, f: FolderE, es: List<EntryE>, today: LocalDate) {
+    val alt = mode == Mode.ALT
+    val tot = Cycle.totals(f, es, today)
+    val months = Cycle.blocks(f, es, today, 30)
+    val weeks = Cycle.blocks(f, es, today, 7)
+    val g = growthPct(months, weeks, mode)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(if (alt) "খরচ বিশ্লেষণ" else "আয় বনাম খরচ", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
+        Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).border(1.dp, Bd, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Ico(Ic.cal, size = 16.dp, tint = Gy); Text(" ${Fmt.range(Cycle.start(f, es), Cycle.end(f, es, today))} ", fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false); Ico(Ic.chev, size = 14.dp, tint = Gy)
+        }
+    }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FitText(if (alt) Fmt.taka(tot.expense) else "বাকি ${Fmt.taka(tot.profit)}", Modifier.weight(1f, fill = false), maxSize = 34.sp, minSize = 18.sp, color = Navy, fontWeight = FontWeight.Bold, lineHeight = 42.sp)
+            DeltaChip(g, goodUp = !alt)
+        }
+        Text(if (alt) "গড় ${Fmt.taka(tot.avgExpense)} / এন্ট্রির দিন · ${Fmt.bn(tot.days)} দিন" else "আয় ${Fmt.taka(tot.income)} − খরচ ${Fmt.taka(tot.expense)} · ${Fmt.bn(tot.days)} এন্ট্রির দিন", fontSize = 13.sp, lineHeight = 18.sp, color = Gy)
+    }
+    if (alt) {
+        val d = Cycle.lastDays(f, es, today, 7).filter { it.exists }
+        if (d.isNotEmpty()) RCard(pad = 12.dp, delay = 1) {
+            Row(Modifier.padding(start = 4.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) { LegendDot(Deep, "দৈনিক খরচ (শেষ ${Fmt.bn(d.size)} এন্ট্রির দিন)") }
+            GroupedBars(d.map { it.expense }, null, d.map { Fmt.bn(it.date.dayOfMonth) })
+        }
+    } else {
+        val wk = weeks.takeLast(6)
+        RCard(pad = 12.dp, delay = 1) {
+            Row(Modifier.padding(start = 4.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) { LegendDot(Deep, "আয়"); LegendDot(Pink, "খরচ") }
+            GroupedBars(wk.map { it.t.income }, wk.map { it.t.expense }, wk.map { "সপ্তাহ ${Fmt.bn(it.no)}" }, Deep, Pink)
+        }
+    }
+    val cats = Cycle.categoryTotals(es, "expense")
+    val total = cats.sumOf { it.second }
+    val palette = listOf(Deep, Sky400, Sky300, Sky200, Color(0xFFE0F2FE))
+    RCard(delay = 2) {
+        if (total <= 0.0) Text("এখনও খাত অনুযায়ী খরচের তথ্য নেই", color = Gy, fontSize = 14.sp)
+        else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Donut(cats.take(5).mapIndexed { i, c -> (c.second / total).toFloat() to palette[i] }, 118.dp) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    FitText(Fmt.taka(total), Modifier.width(70.dp), maxSize = 15.sp, minSize = 9.sp, color = Ink, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Text("মোট খরচ", fontSize = 12.sp, lineHeight = 16.sp, color = Gy)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text("খাত অনুযায়ী খরচ", fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
+                cats.take(5).forEachIndexed { i, c -> LegendRow(palette[i], c.first, "${Fmt.bn((c.second / total * 100).roundToInt())}%") }
+            }
+        }
+    }
+    if (!alt) {
+        val inc = Cycle.categoryTotals(es, "income")
+        val it0 = inc.sumOf { it.second }
+        RCard(delay = 3) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("আয়ের উৎস", fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
+                Text("মোট ${Fmt.taka(it0)}", fontSize = 12.sp, lineHeight = 20.sp, color = Gy)
+            }
+            if (it0 <= 0.0) Text("এখনও আয়ের এন্ট্রি নেই", Modifier.padding(top = 6.dp), color = Gy, fontSize = 14.sp)
+            else {
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(12.dp).clip(CircleShape), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    inc.take(5).forEachIndexed { i, c -> Box(Modifier.weight(max((c.second / it0).toFloat(), .02f)).fillMaxHeight().background(palette[i])) }
+                }
+                inc.take(5).forEachIndexed { i, c -> LegendRow(palette[i], c.first, "${Fmt.bn((c.second / it0 * 100).roundToInt())}%") }
+            }
+        }
+    }
+    val top = cats.firstOrNull()
+    val msg = when {
+        top != null && total > 0 -> "সবচেয়ে বেশি খরচ ${top.first}-এ (${Fmt.bn((top.second / total * 100).roundToInt())}%)। গড় খরচ ${Fmt.taka(tot.avgExpense)}/এন্ট্রির দিন" + if (!alt) ", গড় বাকি ${Fmt.taka(tot.avgIncome - tot.avgExpense)}।" else "।"
+        else -> "এন্ট্রি দিলে এখানে খাত অনুযায়ী সারকথা দেখা যাবে।"
+    }
+    RCard(tint = Color(0xFFE3F4FC), pad = 10.dp, delay = 4) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) { Ico(Ic.bulb, size = 18.dp, tint = Amber) }
+            Text(msg, Modifier.weight(1f), fontSize = 13.sp, lineHeight = 19.sp, color = Color(0xFF0C4A6E))
+        }
+    }
+}
+
 @Composable private fun LegendDot(c: Color, t: String) { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(9.dp).clip(RoundedCornerShape(3.dp)).background(c)); Text(" $t", fontSize = 12.sp, lineHeight = 16.sp, color = Gy) } }
 @Composable private fun LegendRow(c: Color, t: String, v: String) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -399,13 +501,13 @@ private fun AnalyticsTab(f: FolderE, es: List<EntryE>, today: LocalDate, prevF: 
 
 // ---------- ৩) বিস্তারিত ----------
 @Composable
-private fun DetailTab(vm: AppVm, f: FolderE, es: List<EntryE>, today: LocalDate) {
+private fun DetailTab(vm: AppVm, mode: Mode, f: FolderE, es: List<EntryE>, today: LocalDate) {
     val ctx = LocalContext.current
     var scope by rememberSaveable { mutableStateOf(0) }
     var idx by rememberSaveable { mutableStateOf(-1) }
     val weeks = Cycle.blocks(f, es, today, 7)
     val months = Cycle.blocks(f, es, today, 30)
-    val whole = listOf(Block(1, Cycle.start(f), Cycle.end(f, today), false, Cycle.totals(f, es, today)))
+    val whole = listOf(Block(1, Cycle.start(f, es), Cycle.end(f, es, today), false, Cycle.totals(f, es, today)))
     val blocks = when (scope) { 0 -> weeks; 1 -> months; else -> whole }
     val i = (if (idx < 0) blocks.lastIndex else idx).coerceIn(0, blocks.lastIndex)
     val cur = blocks[i]
@@ -429,13 +531,33 @@ private fun DetailTab(vm: AppVm, f: FolderE, es: List<EntryE>, today: LocalDate)
         Box(Modifier.size(36.dp).alpha2(i < blocks.lastIndex).bounceClick(i < blocks.lastIndex) { idx = i + 1 }, contentAlignment = Alignment.Center) { Ico(Ic.fwd, size = 18.dp, tint = Gy) }
     }
     RCard(pad = 0.dp, delay = 1) {
-        DRow(Ic.box, Sky100, Sky700, "মোট মাল", Fmt.bn(t.pieces), prev?.let { Cycle.deltaPct(t.pieces.toDouble(), it.t.pieces.toDouble()) }, true, false)
-        DRow(Ic.coin, Color(0xFFD1FAE5), Green, "মোট আয়", Fmt.taka(t.income), prev?.let { Cycle.deltaPct(t.income, it.t.income) }, true)
-        DRow(Ic.down, Color(0xFFFFE4E6), Rose, "মোট খরচ", Fmt.taka(t.expense), prev?.let { Cycle.deltaPct(t.expense, it.t.expense) }, false)
-        DRow(Ic.target, Sky100, Sky700, "নিট লাভ (আয় − খরচ)", Fmt.taka(t.profit), prev?.let { Cycle.deltaPct(t.profit, it.t.profit) }, true)
-        DRow(Ic.cal, Color(0xFFFEF3C7), Amber, "কাজের দিন", "${Fmt.bn(t.work)} / ${Fmt.bn(t.days)}", null, true)
+        val dExp = Cycle.dayExpenses(es.filter { val d = LocalDate.ofEpochDay(it.day); !d.isBefore(cur.from) && !d.isAfter(cur.to) }).map { it.second }
+        when (mode) {
+            Mode.MAIN -> {
+                DRow(Ic.box, Sky100, Sky700, "মোট মাল", Fmt.bn(t.pieces), prev?.let { Cycle.deltaPct(t.pieces.toDouble(), it.t.pieces.toDouble()) }, true, false)
+                DRow(Ic.coin, Color(0xFFD1FAE5), Green, "মোট আয়", Fmt.taka(t.income), prev?.let { Cycle.deltaPct(t.income, it.t.income) }, true)
+                DRow(Ic.down, Color(0xFFFFE4E6), Rose, "মোট খরচ", Fmt.taka(t.expense), prev?.let { Cycle.deltaPct(t.expense, it.t.expense) }, false)
+                DRow(Ic.target, Sky100, Sky700, "নিট লাভ (আয় − খরচ)", Fmt.taka(t.profit), prev?.let { Cycle.deltaPct(t.profit, it.t.profit) }, true)
+                DRow(Ic.cal, Color(0xFFFEF3C7), Amber, "কাজের দিন", "${Fmt.bn(t.work)} / ${Fmt.bn(t.days)}", null, true)
+            }
+            Mode.ALT -> {
+                DRow(Ic.down, Color(0xFFFFE4E6), Rose, "মোট খরচ", Fmt.taka(t.expense), prev?.let { Cycle.deltaPct(t.expense, it.t.expense) }, false, false)
+                DRow(Ic.gauge, Sky100, Sky700, "গড় খরচ/দিন", Fmt.taka(t.avgExpense), prev?.let { Cycle.deltaPct(t.avgExpense, it.t.avgExpense) }, false)
+                DRow(Ic.up, Color(0xFFFEF3C7), Amber, "সর্বোচ্চ খরচের দিন", Fmt.taka(dExp.maxOrNull() ?: 0.0), null, true)
+                DRow(Ic.dn, Color(0xFFD1FAE5), Green, "সর্বনিম্ন খরচের দিন", Fmt.taka(dExp.minOrNull() ?: 0.0), null, true)
+                DRow(Ic.cal, Sky100, Sky700, "এন্ট্রির দিন", Fmt.bn(t.days), null, true)
+            }
+            Mode.PREMIUM -> {
+                DRow(Ic.up, Color(0xFFD1FAE5), Green, "মোট আয়", Fmt.taka(t.income), prev?.let { Cycle.deltaPct(t.income, it.t.income) }, true, false)
+                DRow(Ic.down, Color(0xFFFFE4E6), Rose, "মোট খরচ", Fmt.taka(t.expense), prev?.let { Cycle.deltaPct(t.expense, it.t.expense) }, false)
+                DRow(Ic.target, Sky100, Sky700, "নিট বাকি (আয় − খরচ)", Fmt.taka(t.profit), prev?.let { Cycle.deltaPct(t.profit, it.t.profit) }, true)
+                DRow(Ic.gauge, Color(0xFFF1F5F9), Slate, "গড় বাকি/দিন", Fmt.taka(t.avgIncome - t.avgExpense), prev?.let { Cycle.deltaPct(t.avgIncome - t.avgExpense, it.t.avgIncome - it.t.avgExpense) }, true)
+                DRow(Ic.cal, Color(0xFFFEF3C7), Amber, "এন্ট্রির দিন", Fmt.bn(t.days), null, true)
+            }
+        }
     }
     // সেরা ৩ দিন
+    if (mode != Mode.MAIN) TopDaysMoney(mode, es.filter { val d = LocalDate.ofEpochDay(it.day); !d.isBefore(cur.from) && !d.isAfter(cur.to) }) else {
     val inRange = es.filter { val d = LocalDate.ofEpochDay(it.day); !d.isBefore(cur.from) && !d.isAfter(cur.to) }.filter { it.quantity > 0 }.sortedByDescending { it.quantity }.take(3)
     val target = f.dailyTarget?.takeIf { it > 0 } ?: inRange.firstOrNull()?.quantity ?: 1
     RCard(pad = 14.dp, delay = 2) {
@@ -455,6 +577,7 @@ private fun DetailTab(vm: AppVm, f: FolderE, es: List<EntryE>, today: LocalDate)
             }
         }
     }
+    }
     // লক্ষ্য ও গতি
     val mb = months.last().t
     val goal = f.incomeGoal?.takeIf { it > 0 }; val limit = f.expenseLimit?.takeIf { it > 0 }
@@ -463,7 +586,7 @@ private fun DetailTab(vm: AppVm, f: FolderE, es: List<EntryE>, today: LocalDate)
         if (goal != null) GoalLine("আয়", mb.income, goal, mb.avgIncome * 30, true)
         if (limit != null) GoalLine("খরচ", mb.expense, limit, mb.avgExpense * 30, false)
         if (goal == null && limit == null) Text("সেটিংস থেকে লক্ষ্য ও সীমা ঠিক করুন", fontSize = 13.sp, color = Gy, modifier = Modifier.padding(top = 6.dp))
-        Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (mode == Mode.MAIN) Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("গড় গতি ${Fmt.bn(t.avgPiecesPerWorkDay.roundToInt())} পিস/কাজের দিন", fontSize = 13.sp, lineHeight = 18.sp, color = Ink)
             DeltaChip(prev?.let { Cycle.deltaPct(t.avgPiecesPerWorkDay, it.t.avgPiecesPerWorkDay) })
         }
@@ -471,15 +594,46 @@ private fun DetailTab(vm: AppVm, f: FolderE, es: List<EntryE>, today: LocalDate)
     val pdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
             val ok = runCatching {
-                writePdf(ctx, uri, "রিপোর্ট · ${f.name}", title, listOf(
-                    "মোট মাল" to "${Fmt.bn(t.pieces)} পিস", "মোট আয়" to Fmt.taka(t.income), "মোট খরচ" to Fmt.taka(t.expense), "নিট লাভ (আয় − খরচ)" to Fmt.taka(t.profit),
-                    "কাজের দিন" to Fmt.bn(t.work), "বন্ধের দিন" to Fmt.bn(t.off), "দিনপ্রতি গড় আয়" to Fmt.taka(t.avgIncome), "দিনপ্রতি গড় খরচ" to Fmt.taka(t.avgExpense),
-                ), weeks.map { Triple("সপ্তাহ ${Fmt.bn(it.no)} · ${Fmt.range(it.from, it.to)}", "আয় ${Fmt.taka(it.t.income)} · খরচ ${Fmt.taka(it.t.expense)}", Fmt.taka(it.t.profit)) })
+                writePdf(ctx, uri, "রিপোর্ট · ${f.name} · ${mode.label}", title, pdfRows(mode, t, es), weeks.map { Triple("সপ্তাহ ${Fmt.bn(it.no)} · ${Fmt.range(it.from, it.to)}", "আয় ${Fmt.taka(it.t.income)} · খরচ ${Fmt.taka(it.t.expense)}", Fmt.taka(it.t.profit)) })
             }.isSuccess
             vm.say(if (ok) "PDF সংরক্ষিত হয়েছে" else "PDF বানানো যায়নি")
         }
     }
     PrimaryButton("রিপোর্ট ডাউনলোড (PDF)", Modifier.fillMaxWidth()) { pdf.launch("smart-hisab-report.pdf") }
+}
+
+private fun pdfRows(mode: Mode, t: Totals, es: List<EntryE>): List<Pair<String, String>> = when (mode) {
+    Mode.MAIN -> listOf(
+        "মোট মাল" to "${Fmt.bn(t.pieces)} পিস", "মোট আয়" to Fmt.taka(t.income), "মোট খরচ" to Fmt.taka(t.expense), "নিট লাভ (আয় − খরচ)" to Fmt.taka(t.profit),
+        "কাজের দিন" to Fmt.bn(t.work), "বন্ধের দিন" to Fmt.bn(t.off), "দিনপ্রতি গড় আয়" to Fmt.taka(t.avgIncome), "দিনপ্রতি গড় খরচ" to Fmt.taka(t.avgExpense),
+    )
+    Mode.ALT -> listOf("মোট খরচ" to Fmt.taka(t.expense), "এন্ট্রির দিন" to Fmt.bn(t.days), "গড় খরচ/দিন" to Fmt.taka(t.avgExpense)) +
+        Cycle.categoryTotals(es, "expense").take(6).map { "খাত: ${it.first}" to Fmt.taka(it.second) }
+    Mode.PREMIUM -> listOf("মোট আয়" to Fmt.taka(t.income), "মোট খরচ" to Fmt.taka(t.expense), "নিট বাকি" to Fmt.taka(t.profit), "এন্ট্রির দিন" to Fmt.bn(t.days),
+        "গড় আয়/দিন" to Fmt.taka(t.avgIncome), "গড় খরচ/দিন" to Fmt.taka(t.avgExpense)) +
+        Cycle.categoryTotals(es, "expense").take(4).map { "খরচ · ${it.first}" to Fmt.taka(it.second) } + Cycle.categoryTotals(es, "income").take(3).map { "আয় · ${it.first}" to Fmt.taka(it.second) }
+}
+
+/** দৈনিক খরচে সবচেয়ে বেশি খরচের ৩ দিন, আয়-ব্যয়তে সবচেয়ে বেশি বাকির ৩ দিন (এন্ট্রি-থাকা তারিখ ধরে) */
+@Composable
+private fun TopDaysMoney(mode: Mode, es: List<EntryE>) {
+    val rows = Cycle.dayRows(es)
+    val best = (if (mode == Mode.ALT) rows.sortedByDescending { it.expense } else rows.sortedByDescending { it.net }).take(3)
+    val mx = best.maxOfOrNull { if (mode == Mode.ALT) it.expense else it.net }?.takeIf { it > 0 } ?: 1.0
+    RCard(pad = 14.dp, delay = 2) {
+        Text(if (mode == Mode.ALT) "সবচেয়ে বেশি খরচের ৩ দিন" else "সেরা বাকির ৩ দিন", fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
+        if (best.isEmpty()) Text("এই সময়ে এন্ট্রি নেই", fontSize = 13.sp, color = Gy, modifier = Modifier.padding(top = 6.dp))
+        best.forEachIndexed { k, r ->
+            val v = if (mode == Mode.ALT) r.expense else r.net
+            Column(Modifier.padding(top = 8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${Fmt.date(r.date)} · ${Fmt.bn(r.count)}টা এন্ট্রি", fontSize = 14.sp, lineHeight = 20.sp, color = Ink)
+                    Text(Fmt.taka(v), fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold, color = Sky700)
+                }
+                Spacer(Modifier.height(4.dp)); ProgBar((v / mx).toFloat().coerceIn(0f, 1f), k)
+            }
+        }
+    }
 }
 
 private fun Modifier.alpha2(on: Boolean) = this.graphicsLayer { alpha = if (on) 1f else .3f }
@@ -539,19 +693,19 @@ private fun writePdf(ctx: Context, uri: Uri, title: String, sub: String, rows: L
 }
 
 // ---------- ৪) রেকর্ড ----------
-private data class Rec(val title: String, val sub: String, val profit: Double, val running: Boolean, val prevCycle: Boolean)
+private data class Rec(val title: String, val sub: String, val profit: Double, val running: Boolean, val prevCycle: Boolean, val bad: Boolean = false)
 
 @Composable
-private fun RecordsTab(f: FolderE, es: List<EntryE>, today: LocalDate, prevF: FolderE?, prevEs: List<EntryE>) {
+private fun RecordsTab(mode: Mode, f: FolderE, es: List<EntryE>, today: LocalDate, prevF: FolderE?, prevEs: List<EntryE>) {
     var query by rememberSaveable { mutableStateOf("") }
     var savedOnly by rememberSaveable { mutableStateOf(false) }
     val weeks = Cycle.blocks(f, es, today, 7)
     val recs = buildList {
         weeks.reversed().forEachIndexed { i, w ->
             val run = i == 0 && f.endDay == null
-            add(Rec("সপ্তাহ ${Fmt.bn(w.no)} · ${Fmt.range(w.from, w.to)}", if (run) "চলমান · আজ রাতে সংরক্ষণ" else "${Fmt.bn(w.t.work)} কাজের দিন · ${Fmt.bn(w.t.off)} বন্ধ", w.t.profit, run, false))
+            add(Rec("সপ্তাহ ${Fmt.bn(w.no)} · ${Fmt.range(w.from, w.to)}", if (run) "চলমান · ${Fmt.bn(w.t.days)}/৭ এন্ট্রির দিন" else if (mode == Mode.MAIN) "${Fmt.bn(w.t.work)} কাজের দিন · ${Fmt.bn(w.t.off)} বন্ধ" else "${Fmt.bn(w.t.days)} এন্ট্রির দিন", if (mode == Mode.ALT) w.t.expense else w.t.profit, run, false, mode == Mode.ALT))
         }
-        prevF?.let { p -> Cycle.blocks(p, prevEs, today, 7).reversed().take(4).forEach { w -> add(Rec("আগের চক্র · ${Fmt.range(w.from, w.to)}", p.name, w.t.profit, false, true)) } }
+        prevF?.let { p -> Cycle.blocks(p, prevEs, today, 7).reversed().take(4).forEach { w -> add(Rec("আগের চক্র · ${Fmt.range(w.from, w.to)}", p.name, if (mode == Mode.ALT) w.t.expense else w.t.profit, false, true, mode == Mode.ALT)) } }
     }.filter { (!savedOnly || !it.running) && (query.isBlank() || it.title.contains(query.trim()) || it.sub.contains(query.trim())) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.weight(1f).height(44.dp).clip(CircleShape).background(Color.White).border(1.dp, Bd, CircleShape).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -575,7 +729,7 @@ private fun RecordsTab(f: FolderE, es: List<EntryE>, today: LocalDate, prevF: Fo
                     Text(r.sub, fontSize = 12.sp, lineHeight = 16.sp, color = Gy, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(Fmt.taka(r.profit), fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = if (r.profit >= 0) Ink else Rose, maxLines = 1, softWrap = false)
+                    Text(Fmt.taka(r.profit), fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = if (r.bad || r.profit < 0) Rose else Ink, maxLines = 1, softWrap = false)
                     if (r.running) Pill("চলমান", Color(0xFFDBEAFE), Color(0xFF1D4ED8)) else Pill("সংরক্ষিত", Color(0xFFD1FAE5), Green)
                 }
                 Ico(Ic.chevR, size = 16.dp, tint = Color(0xFF94A3B8))

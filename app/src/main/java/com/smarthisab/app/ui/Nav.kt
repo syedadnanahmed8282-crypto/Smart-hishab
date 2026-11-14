@@ -20,6 +20,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.smarthisab.app.data.AuthState
+import com.smarthisab.app.domain.Mode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -129,7 +130,8 @@ fun AppRoot(vm: AppVm) {
             composable("report") { ReportScreen(vm, nav) }
             composable("settings") { SettingsScreen(vm, nav) }
             composable("entry?id={id}", listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })) {
-                EntryScreen(vm, nav, it.arguments?.getString("id"))
+                val mode by vm.mode.collectAsState()
+                if (mode == Mode.MAIN) EntryScreen(vm, nav, it.arguments?.getString("id")) else MoneyEntryScreen(vm, nav, it.arguments?.getString("id"))
             }
             composable("folders") { FoldersScreen(vm, nav) }
             composable("newfolder") { NewFolderScreen(vm, nav) }

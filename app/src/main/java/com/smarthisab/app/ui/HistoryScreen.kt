@@ -31,6 +31,7 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
     val f by vm.current.collectAsState()
     val es by vm.currentEntries.collectAsState()
     val viewer by vm.viewer.collectAsState()
+    val mode by vm.mode.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(0) }
     var sel by remember { mutableStateOf<EntryE?>(null) }
@@ -47,24 +48,41 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
             val locked = viewer || folder.closed
             val t = Cycle.totals(folder, es, today)
             val list = es.filter {
-                (filter == 0 || (filter == 1 && it.quantity > 0) || (filter == 2 && it.quantity == 0)) &&
-                    (query.isBlank() || Fmt.date(LocalDate.ofEpochDay(it.day)).contains(query.trim()) || (it.note ?: "").contains(query.trim(), true))
+                val byFilter = when (mode) {
+                    Mode.MAIN -> filter == 0 || (filter == 1 && it.quantity > 0) || (filter == 2 && it.quantity == 0)
+                    Mode.PREMIUM -> filter == 0 || (filter == 1 && it.kind == "income") || (filter == 2 && it.kind == "expense")
+                    Mode.ALT -> true
+                }
+                byFilter && (query.isBlank() || Fmt.date(LocalDate.ofEpochDay(it.day)).contains(query.trim()) || (it.note ?: "").contains(query.trim(), true) || (it.category ?: "").contains(query.trim(), true))
             }
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatsRow(t)
+                ModeStats(t, mode, es)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { FolderPill(vm, nav, folder) }
                     Spacer(Modifier.width(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Chip("সব ${Fmt.bn(t.work + t.off)}", filter == 0) { filter = 0 }
-                        Chip("কাজ ${Fmt.bn(t.work)}", filter == 1, Green) { filter = 1 }
-                        Chip("বন্ধ ${Fmt.bn(t.off)}", filter == 2, Rose) { filter = 2 }
+                        when (mode) {
+                            Mode.MAIN -> {
+                                Chip("সব ${Fmt.bn(t.work + t.off)}", filter == 0) { filter = 0 }
+                                Chip("কাজ ${Fmt.bn(t.work)}", filter == 1, Green) { filter = 1 }
+                                Chip("বন্ধ ${Fmt.bn(t.off)}", filter == 2, Rose) { filter = 2 }
+                            }
+                            Mode.PREMIUM -> {
+                                Chip("সব ${Fmt.bn(es.size)}", filter == 0) { filter = 0 }
+                                Chip("আয় ${Fmt.bn(es.count { it.kind == "income" })}", filter == 1, Green) { filter = 1 }
+                                Chip("খরচ ${Fmt.bn(es.count { it.kind == "expense" })}", filter == 2, Rose) { filter = 2 }
+                            }
+                            Mode.ALT -> Chip("সব ${Fmt.bn(es.size)}", true)
+                        }
                     }
                 }
                 if (!viewer && folder.closed) Banner("নতুন এন্ট্রি বা মোছা যাবে না", "সমাপ্ত ফোল্ডার", Color(0xFFFFF1F2), Color(0xFFFECDD3), Rose)
             }
             LazyColumn(contentPadding = PaddingValues(20.dp, 10.dp, 20.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(list, key = { _, it -> it.id }) { i, e -> EntryRow(e, if (locked) null else ({ sel = e }), Modifier.riseIn(i)) }
+                itemsIndexed(list, key = { _, it -> it.id }) { i, e ->
+                    if (mode == Mode.MAIN) EntryRow(e, if (locked) null else ({ sel = e }), Modifier.riseIn(i))
+                    else MoneyRow(e, if (locked) null else ({ sel = e }), Modifier.riseIn(i))
+                }
                 if (list.isEmpty()) item { Text("কোনো হিসাব পাওয়া যায়নি", color = Slate, modifier = Modifier.padding(8.dp)) }
             }
         }
@@ -75,9 +93,15 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
         ModalBottomSheet({ sel = null }, containerColor = Color.White) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
                 Text(Fmt.dateY(d), fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Navy)
-                Text(if (e.quantity == 0) "বন্ধের দিন" else "${Fmt.bn(e.quantity)} পিস · আয় ${Fmt.taka(incomeOf(e))} · খরচ ${Fmt.taka(e.expense)}", color = Slate, fontSize = 13.sp)
+                Text(
+                    when {
+                        e.mode != "main" -> "${if (e.kind == "income") "আয়" else "খরচ"} ${Fmt.taka(e.amount)} · ${e.category ?: "—"}"
+                        e.quantity == 0 -> "বন্ধের দিন" + if (e.expense > 0) " · খরচ ${Fmt.taka(e.expense)}" else ""
+                        else -> "${Fmt.bn(e.quantity)} পিস · আয় ${Fmt.taka(incomeOf(e))} · খরচ ${Fmt.taka(expenseOf(e))}"
+                    }, color = Slate, fontSize = 13.sp,
+                )
                 Spacer(Modifier.height(8.dp))
-                SheetAction(Ic.edit, "সম্পাদনা করুন", "মাল, খরচ বা তারিখ ঠিক করুন", Navy) { sel = null; nav.navigate("entry?id=${e.id}") }
+                SheetAction(Ic.edit, "সম্পাদনা করুন", if (e.mode == "main") "মাল, খরচ বা তারিখ ঠিক করুন" else "পরিমাণ, খাত বা তারিখ ঠিক করুন", Navy) { sel = null; nav.navigate("entry?id=${e.id}") }
                 SheetAction(Ic.trash, "মুছে ফেলুন", "এই দিনের হিসাব মুছে যাবে", Rose) { sel = null; del = e }
             }
         }

@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import com.russhwolf.settings.SettingsInitializer
 import com.smarthisab.app.data.AppDb
 import com.smarthisab.app.data.MIGRATION_1_2
+import com.smarthisab.app.data.MIGRATION_2_3
 import com.smarthisab.app.data.Repo
 import com.smarthisab.app.data.WeatherService
 import com.smarthisab.app.data.buildSupabase
@@ -29,7 +30,7 @@ class App : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         SettingsInitializer().create(this)
-        val db = Room.databaseBuilder(this, AppDb::class.java, "smarthisab.db").addMigrations(MIGRATION_1_2).build()
+        val db = Room.databaseBuilder(this, AppDb::class.java, "smarthisab.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
         repo = Repo(db, buildSupabase(this))
         weather = WeatherService(this, repo)
         val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)

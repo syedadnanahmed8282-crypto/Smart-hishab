@@ -68,7 +68,7 @@ private fun EntryForm(vm: AppVm, nav: NavHostController, f: FolderE, entryId: St
                     Chip("আজ", d == today) { day = today.toEpochDay() }
                     Chip("গতকাল", d == today.minusDays(1)) { day = today.minusDays(1).toEpochDay() }
                 }
-                if (d.isBefore(Cycle.start(f))) Text("ফোল্ডারের শুরুর তারিখ ${Fmt.dateY(d)}-এ সরে আসবে", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = Amber)
+                if (d.isBefore(Cycle.start(f, all.filter { it.folderId == f.id }))) Text("চক্র ${Fmt.dateY(d)} থেকে শুরু হবে", Modifier.padding(top = 6.dp), fontSize = 12.sp, color = Amber)
             }
 
             Card3D(Modifier.fillMaxWidth()) {

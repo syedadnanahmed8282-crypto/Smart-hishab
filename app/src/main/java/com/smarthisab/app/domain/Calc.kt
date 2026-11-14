@@ -41,7 +41,35 @@ object Fmt {
     fun range(a: LocalDate, b: LocalDate): String = if (a.month == b.month) "${bn(a.dayOfMonth)}–${date(b)}" else "${date(a)} – ${date(b)}"
 }
 
-fun incomeOf(e: EntryE): Double = e.quantity * e.rate / 100.0
+/** তিন ধরনের হিসাব। main = মালের হিসাব, alt = দৈনিক খরচ, prem = আয়-ব্যয় */
+enum class Mode(val key: String, val label: String, val short: String) {
+    MAIN("main", "মালের হিসাব", "মাল"),
+    ALT("alt", "দৈনিক খরচ", "খরচ"),
+    PREMIUM("prem", "আয়-ব্যয়", "আয়-ব্যয়");
+
+    companion object { fun from(key: String?): Mode = entries.firstOrNull { it.key == key } ?: MAIN }
+}
+
+/** ডিফল্ট খাত। প্রতিটা ধরনে নিজের কাস্টম খাত আলাদা থাকে (Repo-তে) */
+object Cats {
+    val expense = listOf("নাস্তা", "ভাত", "গাড়ি ভাড়া", "অন্যান্য")
+    val income = listOf("বিক্রি", "মজুরি", "বেতন", "অন্যান্য আয়")
+    const val OTHER = "অন্যান্য"
+}
+
+/** আয়: মালের হিসাবে মাল × রেট, আয়-ব্যয়তে আয়-ধরনের এন্ট্রির পরিমাণ, দৈনিক খরচে সবসময় ০ */
+fun incomeOf(e: EntryE): Double = when {
+    e.mode == "main" -> e.quantity * e.rate / 100.0
+    e.kind == "income" -> e.amount
+    else -> 0.0
+}
+
+/** খরচ: মালের হিসাবে দিনের খরচ ঘর, অন্য দুই ধরনে খরচ-ধরনের এন্ট্রির পরিমাণ */
+fun expenseOf(e: EntryE): Double = when {
+    e.mode == "main" -> e.expense
+    e.kind == "expense" -> e.amount
+    else -> 0.0
+}
 
 data class Totals(
     val days: Int,
@@ -61,12 +89,13 @@ data class Totals(
 fun totalsOf(es: List<EntryE>, days: Int? = null): Totals {
     val active = es.filter { it.deletedAt == null }
     val byDate = active.groupBy { it.day }
-    val workDays = byDate.count { (_, list) -> list.sumOf { it.quantity } > 0 }
-    val offDays = byDate.count { (_, list) -> list.sumOf { it.quantity } == 0 }
+    // মালের হিসাবে মাল ০ মানে বন্ধের দিন (খরচ থাকলে সেটাও গোনা হয়)। অন্য দুই ধরনে এন্ট্রি-থাকা প্রতিটা তারিখই কাজের দিন।
+    val workDays = byDate.count { (_, list) -> list.any { it.mode != "main" } || list.sumOf { it.quantity } > 0 }
+    val offDays = byDate.count { (_, list) -> list.all { it.mode == "main" } && list.sumOf { it.quantity } == 0 }
     val actualDays = days ?: byDate.size
     val totalPieces = active.sumOf { it.quantity.toLong() }
     val totalIncome = active.sumOf { incomeOf(it) }
-    val totalExpense = active.sumOf { it.expense }
+    val totalExpense = active.sumOf { expenseOf(it) }
     return Totals(
         days = actualDays,
         work = workDays,
@@ -97,6 +126,12 @@ object Cycle {
         val active = es.filter { it.deletedAt == null && it.folderId == f.id }
         return active.map { LocalDate.ofEpochDay(it.day) }.distinct().sorted()
     }
+
+    /** চক্রের শুরু = প্রথম এন্ট্রির তারিখ (এন্ট্রি না থাকলে ফোল্ডারের শুরুর তারিখ) */
+    fun start(f: FolderE, es: List<EntryE>): LocalDate = uniqueEntryDates(f, es).firstOrNull() ?: start(f)
+
+    /** চক্রের শেষ = শেষ এন্ট্রির তারিখ (এন্ট্রি না থাকলে শুরুর তারিখ) */
+    fun end(f: FolderE, es: List<EntryE>, today: LocalDate = LocalDate.now()): LocalDate = uniqueEntryDates(f, es).lastOrNull() ?: start(f)
 
     fun totalDays(f: FolderE, today: LocalDate = LocalDate.now()): Int =
         max(1, ChronoUnit.DAYS.between(start(f), end(f, today)).toInt() + 1)
@@ -159,7 +194,7 @@ object Cycle {
                 DayPt(
                     date = d,
                     income = dayEntries.sumOf { incomeOf(it) },
-                    expense = dayEntries.sumOf { it.expense },
+                    expense = dayEntries.sumOf { expenseOf(it) },
                     pieces = dayEntries.sumOf { it.quantity },
                     exists = true,
                 )
@@ -175,7 +210,7 @@ object Cycle {
                 DayPt(
                     date = d,
                     income = dayEntries.sumOf { incomeOf(it) },
-                    expense = dayEntries.sumOf { it.expense },
+                    expense = dayEntries.sumOf { expenseOf(it) },
                     pieces = dayEntries.sumOf { it.quantity },
                     exists = true,
                 )
@@ -185,4 +220,28 @@ object Cycle {
     }
 
     fun deltaPct(now: Double, prev: Double): Double? = if (prev <= 0.0) null else (now - prev) / prev * 100.0
+
+    /** খাত অনুযায়ী মোট (kind = "expense" বা "income"), বড় থেকে ছোট */
+    fun categoryTotals(es: List<EntryE>, kind: String): List<Pair<String, Double>> =
+        es.filter { it.deletedAt == null && it.mode != "main" && it.kind == kind }
+            .groupBy { it.category?.takeIf { c -> c.isNotBlank() } ?: Cats.OTHER }
+            .map { (c, l) -> c to l.sumOf { it.amount } }
+            .sortedByDescending { it.second }
+
+    /** দিন অনুযায়ী সারাংশ (নতুন তারিখ আগে) — দৈনিক খরচ ও আয়-ব্যয়ের তালিকার জন্য */
+    fun dayRows(es: List<EntryE>): List<DayRow> =
+        es.filter { it.deletedAt == null }.groupBy { it.day }.map { (d, l) ->
+            DayRow(
+                LocalDate.ofEpochDay(d), l.sumOf { incomeOf(it) }, l.sumOf { expenseOf(it) }, l.size,
+                l.filter { it.kind == "expense" }.mapNotNull { it.category }.distinct(),
+            )
+        }.sortedByDescending { it.date }
+
+    /** এন্ট্রি-থাকা তারিখ ধরে দিনপ্রতি খরচ (সর্বোচ্চ/সর্বনিম্ন দিনের জন্য) */
+    fun dayExpenses(es: List<EntryE>): List<Pair<LocalDate, Double>> =
+        es.filter { it.deletedAt == null }.groupBy { it.day }.map { (d, l) -> LocalDate.ofEpochDay(d) to l.sumOf { expenseOf(it) } }.sortedBy { it.first }
+}
+
+data class DayRow(val date: LocalDate, val income: Double, val expense: Double, val count: Int, val cats: List<String>) {
+    val net get() = income - expense
 }

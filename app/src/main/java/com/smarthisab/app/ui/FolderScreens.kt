@@ -77,8 +77,8 @@ fun CloseCycleDialog(vm: AppVm, f: FolderE, onDismiss: () -> Unit) {
         title = { Text("এই চক্র শেষ করবেন?", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${f.name} · ${Fmt.bn(t.days)} দিন", color = Slate)
-                Text("আয় ${Fmt.taka(t.income)} · খরচ ${Fmt.taka(t.expense)} · লাভ ${Fmt.taka(t.profit)}\nকাজ ${Fmt.bn(t.work)} · বন্ধ ${Fmt.bn(t.off)} দিন", fontWeight = FontWeight.SemiBold)
+                Text("${f.name} · ${Fmt.bn(t.days)} এন্ট্রির দিন", color = Slate)
+                Text(if (f.mode == "alt") "মোট খরচ ${Fmt.taka(t.expense)} · গড় ${Fmt.taka(t.avgExpense)}/দিন" else "আয় ${Fmt.taka(t.income)} · খরচ ${Fmt.taka(t.expense)} · বাকি ${Fmt.taka(t.profit)}" + if (f.mode == "main") "\nকাজ ${Fmt.bn(t.work)} · বন্ধ ${Fmt.bn(t.off)} দিন" else "", fontWeight = FontWeight.SemiBold)
                 Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(useLast, { useLast = true }); Text("শেষ এন্ট্রির দিন (${Fmt.dateY(last)})") }
                 Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(!useLast, { useLast = false; pick = true }); Text("অন্য তারিখ: ${Fmt.dateY(custom)}") }
                 Text("• ফোল্ডার \"সমাপ্ত\" হবে, নতুন এন্ট্রি বা মোছা যাবে না\n• পরে আবার চালু করা যাবে", fontSize = 12.sp, color = Slate)
@@ -114,7 +114,7 @@ fun FoldersScreen(vm: AppVm, nav: NavHostController) {
                                 Text(if (f.closed) "সমাপ্ত" else "চলমান", Modifier.clip(CircleShape).background(if (f.closed) Color(0xFFFFE4E6) else Color(0xFFD1FAE5)).padding(horizontal = 8.dp, vertical = 1.dp),
                                     fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (f.closed) Rose else Green)
                             }
-                            Text("${Fmt.dateY(Cycle.start(f))} থেকে · ${Fmt.bn(t.days)} দিন · লাভ ${Fmt.taka(t.profit)}", fontSize = 12.sp, color = Slate)
+                            Text("${Fmt.dateY(Cycle.start(f, mine))} থেকে · ${Fmt.bn(t.days)} এন্ট্রির দিন · ${if (f.mode == "alt") "খরচ ${Fmt.taka(t.expense)}" else "বাকি ${Fmt.taka(t.profit)}"}", fontSize = 12.sp, color = Slate)
                         }
                         if (!viewer) Box {
                             IconButton({ menuFor = f.id }) { Ico(Ic.more, size = 22.dp, tint = Slate, sw = 3.4f) }
@@ -159,6 +159,7 @@ fun FoldersScreen(vm: AppVm, nav: NavHostController) {
 
 @Composable
 fun NewFolderScreen(vm: AppVm, nav: NavHostController) {
+    val mode by vm.mode.collectAsState()
     var name by rememberSaveable { mutableStateOf("") }
     var start by rememberSaveable { mutableStateOf(LocalDate.now().toEpochDay()) }
     var goal by rememberSaveable { mutableStateOf("12000") }
@@ -168,30 +169,40 @@ fun NewFolderScreen(vm: AppVm, nav: NavHostController) {
     var pickStart by remember { mutableStateOf(false) }
     val s = LocalDate.ofEpochDay(start)
     ScreenBox {
-        TopBar("কাজের চক্র", "নতুন ফোল্ডার", { nav.popBackStack() })
+        TopBar(mode.label, "নতুন ফোল্ডার", { nav.popBackStack() })
         Column(Modifier.padding(horizontal = 20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Card3D(Modifier.fillMaxWidth()) {
                 Field("ফোল্ডারের নাম (যেমন অক্টোবর–ডিসেম্বর)", name, { name = it })
                 Spacer(Modifier.height(10.dp))
                 Text("শুরুর তারিখ", fontSize = 13.sp, color = Slate)
                 SoftButton(Fmt.dateY(s), Modifier.fillMaxWidth(), color = Navy, icon = Ic.cal) { pickStart = true }
-                Text("শেষের তারিখ আগে ঠিক করতে হবে না। কাজ শেষ হলে \"চক্র শেষ করুন\" চাপবেন।", fontSize = 12.sp, color = Slate, modifier = Modifier.padding(top = 6.dp))
+                Text("চক্র প্রথম এন্ট্রির তারিখ থেকে শেষ এন্ট্রির তারিখ পর্যন্ত গোনা হয়। কাজ শেষ হলে \"চক্র শেষ করুন\" চাপবেন।", fontSize = 12.sp, color = Slate, modifier = Modifier.padding(top = 6.dp))
             }
             Card3D(Modifier.fillMaxWidth(), pad = 12.dp) {
-                Field("কাজের মাসে আয়ের লক্ষ্য", goal, { goal = it }, numeric = true, suffix = "৳")
-                Spacer(Modifier.height(8.dp))
+                if (mode != Mode.ALT) {
+                    Field("কাজের মাসে আয়ের লক্ষ্য", goal, { goal = it }, numeric = true, suffix = "৳")
+                    Spacer(Modifier.height(8.dp))
+                }
                 Field("কাজের মাসে খরচের সীমা", limit, { limit = it }, numeric = true, suffix = "৳")
-                Spacer(Modifier.height(8.dp))
-                Field("মজুরি রেট (প্রতি ১০০ পিস)", wage, { wage = it }, numeric = true, suffix = "৳")
-                Spacer(Modifier.height(8.dp))
-                Field("দৈনিক টার্গেট", target, { target = it }, numeric = true, suffix = "পিস")
+                if (mode == Mode.MAIN) {
+                    Spacer(Modifier.height(8.dp))
+                    Field("মজুরি রেট (প্রতি ১০০ পিস)", wage, { wage = it }, numeric = true, suffix = "৳")
+                    Spacer(Modifier.height(8.dp))
+                    Field("দৈনিক টার্গেট", target, { target = it }, numeric = true, suffix = "পিস")
+                }
             }
             Card3D(Modifier.fillMaxWidth(), tint = Sky50) {
-                Text("শুরুর তারিখ থেকে গোনা হবে", fontWeight = FontWeight.Bold, color = Navy, fontSize = 13.sp)
-                Text("সপ্তাহ ১: ${Fmt.range(s, s.plusDays(6))}\nকাজের মাস ১: ${Fmt.range(s, s.plusDays(29))} (৩০ দিন)", fontSize = 13.sp, color = Slate, lineHeight = 22.sp)
+                Text("এন্ট্রির তারিখ ধরে গোনা হবে", fontWeight = FontWeight.Bold, color = Navy, fontSize = 13.sp)
+                Text("সপ্তাহ = ৭টা আলাদা এন্ট্রির তারিখ\nকাজের মাস = ৩০টা আলাদা এন্ট্রির তারিখ\nযে তারিখে এন্ট্রি নেই সেটা গোনা হয় না", fontSize = 13.sp, color = Slate, lineHeight = 22.sp)
             }
             PrimaryButton("ফোল্ডার তৈরি করুন", Modifier.fillMaxWidth(), enabled = name.isNotBlank()) {
-                vm.createFolder(name, s, null, Fmt.parseMoney(goal).takeIf { it > 0 }, Fmt.parseMoney(limit).takeIf { it > 0 }, Fmt.parseMoney(wage), Fmt.parseInt(target).takeIf { it > 0 }) {
+                vm.createFolder(
+                    name, s, null,
+                    if (mode == Mode.ALT) null else Fmt.parseMoney(goal).takeIf { it > 0 },
+                    Fmt.parseMoney(limit).takeIf { it > 0 },
+                    if (mode == Mode.MAIN) Fmt.parseMoney(wage) else 50.0,
+                    if (mode == Mode.MAIN) Fmt.parseInt(target).takeIf { it > 0 } else null,
+                ) {
                     nav.navigate("home") { popUpTo("home") { inclusive = true } }
                 }
             }

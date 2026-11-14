@@ -48,6 +48,8 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
     val f by vm.current.collectAsState()
     val es by vm.currentEntries.collectAsState()
     val viewer by vm.viewer.collectAsState()
+    val mode by vm.mode.collectAsState()
+    var pickMode by remember { mutableStateOf(false) }
     val today = remember { LocalDate.now() }
     val folder = f
 
@@ -73,8 +75,11 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
                 Column(Modifier.fillMaxWidth()) {
                     HeroText(viewer, today)
                     // ফোল্ডার বাছাই: লক্ষ্য কার্ডের ঠিক বাম কোণার ওপরে, কার্ডের অংশ নয়
-                    Row(Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp)) { FolderPill(vm, nav, folder) }
-                    if (folder != null) GoalCard(folder, es, today, Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp))
+                    Row(Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FolderPill(vm, nav, folder)
+                        ModeChip(mode) { pickMode = true }
+                    }
+                    if (folder != null) GoalCard(mode, folder, es, today, Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp))
                 }
                 WeatherBadge(
                     weather, wLoading, vm.wx.hasKey,
@@ -82,7 +87,7 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
                     modifier = Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 18.dp),
                 )
             }
-            if (folder == null) EmptyHome(nav) else HomeBody(vm, nav, folder, es, viewer, today)
+            if (folder == null) EmptyHome(nav, mode) else HomeBody(vm, nav, mode, folder, es, viewer, today)
             Spacer(Modifier.height(96.dp))
         }
         if (folder != null) {
@@ -92,6 +97,7 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
             }
         }
     }
+    if (pickMode) ModePickerSheet(vm, mode) { pickMode = false }
 }
 
 @Composable
@@ -109,32 +115,63 @@ private fun HeroText(viewer: Boolean, today: LocalDate) {
 }
 
 @Composable
-private fun GoalCard(f: FolderE, es: List<EntryE>, today: LocalDate, modifier: Modifier) {
+private fun GoalCard(mode: Mode, f: FolderE, es: List<EntryE>, today: LocalDate, modifier: Modifier) {
     val tot = Cycle.totals(f, es, today)
     val cur = Cycle.blocks(f, es, today, 30).last()
-    val goal = f.incomeGoal?.takeIf { it > 0 }
+    val goal = f.incomeGoal?.takeIf { it > 0 && mode != Mode.ALT }
     val limit = f.expenseLimit?.takeIf { it > 0 }
     val incP = if (goal != null) (cur.t.income / goal).toFloat() else 0f
     val expP = if (limit != null) (cur.t.expense / limit).toFloat() else 0f
     val warn = when { expP >= 1f -> Red300; expP >= .8f -> Yellow; else -> Pink }
     val days = Cycle.lastDays(f, es, today)
+    val dayExp = Cycle.dayExpenses(es).map { it.second }
     BlueCard(modifier.fillMaxWidth(), delay = 1) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(Modifier.fillMaxWidth().heightIn(min = 86.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DualRing(incP, expP, warn, 66.dp) { Text("৳", color = Color.White.copy(alpha = .55f), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                if (mode == Mode.ALT) DualRing(expP, 0f, warn, 66.dp) { Ico(Ic.wallet, size = 20.dp, tint = Color.White.copy(alpha = .7f)) }
+                else DualRing(incP, expP, warn, 66.dp) { Text("৳", color = Color.White.copy(alpha = .55f), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
                 // মাসিক লক্ষ্য ও সীমা: কম লেখা, এক লাইনে মান
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                    GoalItem(Color.White, "আয়", Fmt.taka(cur.t.income), "লক্ষ্য", goal, incP, false)
-                    Spacer(Modifier.height(5.dp))
-                    GoalItem(warn, "খরচ", Fmt.taka(cur.t.expense), "সীমা", limit, expP, expP >= .8f)
+                    if (mode == Mode.ALT) {
+                        GoalItem(warn, "খরচ", Fmt.taka(cur.t.expense), "সীমা", limit, expP, expP >= .8f)
+                        Spacer(Modifier.height(5.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF6EE7B7)))
+                                Text("বাকি সীমা", Modifier.padding(start = 5.dp), fontSize = 12.sp, lineHeight = 18.sp, color = Sky100, maxLines = 1, softWrap = false)
+                                FitText(if (limit != null) Fmt.taka((limit - cur.t.expense).coerceAtLeast(0.0)) else "—", Modifier.weight(1f).padding(start = 6.dp), maxSize = 14.sp, minSize = 9.sp, color = Color(0xFFA7F3D0), fontWeight = FontWeight.Bold, lineHeight = 18.sp)
+                            }
+                            Text("${Fmt.bn(tot.days)} এন্ট্রির দিন", fontSize = 12.sp, lineHeight = 17.sp, color = Sky200, maxLines = 1, softWrap = false)
+                        }
+                    } else {
+                        GoalItem(Color.White, "আয়", Fmt.taka(cur.t.income), "লক্ষ্য", goal, incP, false)
+                        Spacer(Modifier.height(5.dp))
+                        GoalItem(warn, "খরচ", Fmt.taka(cur.t.expense), "সীমা", limit, expP, expP >= .8f)
+                    }
                 }
-                // চক্রের গড়/দিন: মাল, আয়, খরচ, বাকি (বাকি = আয় − খরচ), এক এক লাইনে, বর্ডার ছাড়া
+                // গড় হিসাব (এন্ট্রি-থাকা তারিখ ধরে; বাকি = আয় − খরচ)
                 Column(Modifier.width(120.dp), verticalArrangement = Arrangement.Center) {
                     Text("চক্রের গড়/দিন", color = Color.White, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
-                    AvgRow("মাল", "${Fmt.bn(tot.avgPieces.roundToInt())} পিস", Sky300)
-                    AvgRow("আয়", Fmt.taka(tot.avgIncome), Color.White)
-                    AvgRow("খরচ", Fmt.taka(tot.avgExpense), Pink)
-                    AvgRow("বাকি", Fmt.taka(tot.avgIncome - tot.avgExpense), Color(0xFF6EE7B7))
+                    when (mode) {
+                        Mode.MAIN -> {
+                            AvgRow("মাল", "${Fmt.bn(tot.avgPieces.roundToInt())} পিস", Sky300)
+                            AvgRow("আয়", Fmt.taka(tot.avgIncome), Color.White)
+                            AvgRow("খরচ", Fmt.taka(tot.avgExpense), Pink)
+                            AvgRow("বাকি", Fmt.taka(tot.avgIncome - tot.avgExpense), Color(0xFF6EE7B7))
+                        }
+                        Mode.ALT -> {
+                            AvgRow("খরচ", Fmt.taka(tot.avgExpense), Pink)
+                            AvgRow("সর্বোচ্চ", Fmt.taka(dayExp.maxOrNull() ?: 0.0), Yellow)
+                            AvgRow("সর্বনিম্ন", Fmt.taka(dayExp.minOrNull() ?: 0.0), Color(0xFF6EE7B7))
+                            AvgRow("এন্ট্রির দিন", Fmt.bn(tot.days), Sky300)
+                        }
+                        Mode.PREMIUM -> {
+                            AvgRow("আয়", Fmt.taka(tot.avgIncome), Color.White)
+                            AvgRow("খরচ", Fmt.taka(tot.avgExpense), Pink)
+                            AvgRow("বাকি", Fmt.taka(tot.avgIncome - tot.avgExpense), Color(0xFF6EE7B7))
+                            AvgRow("এন্ট্রির দিন", Fmt.bn(tot.days), Sky300)
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -144,17 +181,18 @@ private fun GoalCard(f: FolderE, es: List<EntryE>, today: LocalDate, modifier: M
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("শেষ ৭ দিন", color = Color.White, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { LegendLine(Color.White, "আয়"); LegendLine(Pink, "খরচ") }
+                    Text("শেষ ৭ এন্ট্রির দিন", color = Color.White, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { if (mode != Mode.ALT) LegendLine(Color.White, "আয়"); LegendLine(Pink, "খরচ") }
                 }
-                TwoLineChart(
-                    days.map { it.income }, days.map { it.expense },
-                    days.map { if (it.date == today) "আজ" else Fmt.bn(it.date.dayOfMonth) },
+                val labels = days.map { if (it.date == today) "আজ" else Fmt.bn(it.date.dayOfMonth) }
+                if (mode == Mode.ALT) DayBars(days.map { it.expense }, labels, tot.avgExpense, Modifier.fillMaxWidth().height(68.dp))
+                else TwoLineChart(
+                    days.map { it.income }, days.map { it.expense }, labels,
                     Modifier.fillMaxWidth().height(68.dp), area = true, glow = true, todayLabel = Fmt.taka(days.last().income),
                 )
             }
         }
-        if (f.closed) SealStamp(tot, Cycle.start(f), Cycle.end(f, today), Modifier.align(Alignment.Center).padding(top = 40.dp).widthIn(max = 290.dp))
+        if (f.closed && mode == Mode.MAIN) SealStamp(tot, Cycle.start(f, es), Cycle.end(f, es, today), Modifier.align(Alignment.Center).padding(top = 40.dp).widthIn(max = 290.dp))
     }
 }
 
@@ -192,23 +230,26 @@ private fun LegendLine(c: Color, t: String) {
 }
 
 @Composable
-private fun HomeBody(vm: AppVm, nav: NavHostController, f: FolderE, es: List<EntryE>, viewer: Boolean, today: LocalDate) {
+private fun HomeBody(vm: AppVm, nav: NavHostController, mode: Mode, f: FolderE, es: List<EntryE>, viewer: Boolean, today: LocalDate) {
     val t = Cycle.totals(f, es, today)
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        StatsRow(t)
+        ModeStats(t, mode, es)
         if (f.closed) Banner("নতুন এন্ট্রি বা মোছা যাবে না", "এই ফোল্ডার বন্ধ", Color(0xFFFFF1F2), Color(0xFFFECDD3), Rose) {
             if (!viewer) TextButton({ vm.reopenFolder(f.id) }) { Text("আবার চালু করুন", color = Rose, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("দৈনিক হিসাব", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Navy, maxLines = 1, softWrap = false)
-                Text("কাজ ${Fmt.bn(t.work)} দিন", Modifier.clip(CircleShape).background(Color(0xFFD1FAE5)).padding(horizontal = 9.dp, vertical = 3.dp), color = Green, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-                Text("বন্ধ ${Fmt.bn(t.off)} দিন", Modifier.clip(CircleShape).background(Color(0xFFFFE4E6)).padding(horizontal = 9.dp, vertical = 3.dp), color = Rose, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                if (mode == Mode.MAIN) {
+                    Text("কাজ ${Fmt.bn(t.work)} দিন", Modifier.clip(CircleShape).background(Color(0xFFD1FAE5)).padding(horizontal = 9.dp, vertical = 3.dp), color = Green, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                    Text("বন্ধ ${Fmt.bn(t.off)} দিন", Modifier.clip(CircleShape).background(Color(0xFFFFE4E6)).padding(horizontal = 9.dp, vertical = 3.dp), color = Rose, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                } else Text("${Fmt.bn(t.days)} এন্ট্রির দিন", Modifier.clip(CircleShape).background(Sky100).padding(horizontal = 9.dp, vertical = 3.dp), color = Sky800, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
             TextButton({ nav.goTab("history") }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("সব দেখুন", fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false) }
         }
         if (es.isEmpty()) Text("এখনও কোনো হিসাব নেই। নিচের + বাটনে চাপুন।", color = Slate, fontSize = 14.sp)
-        es.take(3).forEachIndexed { i, e -> EntryRow(e, null, Modifier.riseIn(2 + i)) }
+        if (mode == Mode.MAIN) es.take(3).forEachIndexed { i, e -> EntryRow(e, null, Modifier.riseIn(2 + i)) }
+        else Cycle.dayRows(es).take(3).forEachIndexed { i, r -> DayRowItem(r, mode, Modifier.riseIn(2 + i)) }
     }
 }
 
@@ -237,11 +278,11 @@ fun EntryRow(e: EntryE, onMenu: (() -> Unit)?, modifier: Modifier = Modifier) {
                 Text("কোনো কাজ হয়নি", fontSize = 12.sp, color = Slate)
             } else {
                 Text("${Fmt.bn(e.quantity)} পিস", fontWeight = FontWeight.Bold, color = Navy, fontSize = 15.sp)
-                Text("আয় ${Fmt.taka(inc)} · লাভ ${Fmt.taka(inc - e.expense)}", fontSize = 12.sp, color = Slate, maxLines = 1)
+                Text("আয় ${Fmt.taka(inc)} · লাভ ${Fmt.taka(inc - expenseOf(e))}", fontSize = 12.sp, color = Slate, maxLines = 1)
             }
         }
-        if (e.expense > 0 || !off) Column(horizontalAlignment = Alignment.End) {
-            Text(Fmt.taka(e.expense), fontWeight = FontWeight.Bold, color = Rose, fontSize = 15.sp)
+        if (expenseOf(e) > 0 || !off) Column(horizontalAlignment = Alignment.End) {
+            Text(Fmt.taka(expenseOf(e)), fontWeight = FontWeight.Bold, color = Rose, fontSize = 15.sp)
             Text("খরচ", fontSize = 12.sp, color = Slate)
         } else Text("বন্ধ", fontWeight = FontWeight.Bold, color = Rose, fontSize = 13.sp)
         if (onMenu != null) IconButton(onMenu, Modifier.size(32.dp)) { Ico(Ic.more, size = 22.dp, tint = Slate, sw = 3.4f) }
@@ -249,10 +290,10 @@ fun EntryRow(e: EntryE, onMenu: (() -> Unit)?, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EmptyHome(nav: NavHostController) {
+private fun EmptyHome(nav: NavHostController, mode: Mode) {
     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("প্রথমে একটা ফোল্ডার (কাজের চক্র) বানান", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Navy)
-        Text("কাজ শুরুর তারিখ থেকে সব সপ্তাহ ও মাসের হিসাব নিজে মিলে যাবে।", color = Slate, fontSize = 14.sp)
+        Text(if (mode == Mode.MAIN) "প্রথম এন্ট্রির তারিখ থেকে সব সপ্তাহ ও মাসের হিসাব নিজে মিলে যাবে।" else "${mode.label}-এর ফোল্ডার আলাদা। প্রথম এন্ট্রি দিলেই চক্র শুরু হবে।", color = Slate, fontSize = 14.sp)
         PrimaryButton("নতুন ফোল্ডার তৈরি করুন", Modifier.fillMaxWidth()) { nav.navigate("newfolder") }
     }
 }
