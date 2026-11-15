@@ -36,6 +36,7 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
     var filter by rememberSaveable { mutableStateOf(0) }
     var sel by remember { mutableStateOf<EntryE?>(null) }
     var del by remember { mutableStateOf<EntryE?>(null) }
+    val toggled = remember { mutableStateListOf<Long>() }
     val today = remember { LocalDate.now() }
     val folder = f
 
@@ -79,7 +80,19 @@ fun HistoryScreen(vm: AppVm, nav: NavHostController) {
                 if (!viewer && folder.closed) Banner("নতুন এন্ট্রি বা মোছা যাবে না", "সমাপ্ত ফোল্ডার", Color(0xFFFFF1F2), Color(0xFFFECDD3), Rose)
             }
             LazyColumn(contentPadding = PaddingValues(20.dp, 10.dp, 20.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(list, key = { _, it -> it.id }) { i, e ->
+                if (mode == Mode.PREMIUM) {
+                    list.groupBy { it.day }.toSortedMap(compareByDescending<Long> { it }).entries.forEachIndexed { i, (d, shown) ->
+                        item(key = "day$d") {
+                            PremDayCard(
+                                LocalDate.ofEpochDay(d), es.filter { it.day == d }, shown, (i == 0) != toggled.contains(d), locked,
+                                onToggle = { if (!toggled.remove(d)) toggled.add(d) },
+                                onEdit = { if (locked) vm.say(if (viewer) "ভিউয়ার মোডে সম্পাদনা বন্ধ" else "ফোল্ডার সমাপ্ত, আগে আবার চালু করুন") else nav.navigate("entry?day=$d") },
+                                modifier = Modifier.riseIn(i),
+                            )
+                        }
+                    }
+                }
+                if (mode != Mode.PREMIUM) itemsIndexed(list, key = { _, it -> it.id }) { i, e ->
                     if (mode == Mode.MAIN) EntryRow(e, if (locked) null else ({ sel = e }), Modifier.riseIn(i))
                     else MoneyRow(e, if (locked) null else ({ sel = e }), Modifier.riseIn(i))
                 }

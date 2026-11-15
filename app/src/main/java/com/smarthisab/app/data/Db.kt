@@ -68,6 +68,8 @@ interface EntryDao {
     @Query("SELECT * FROM entries WHERE id = :id") suspend fun get(id: String): EntryE?
     @Query("SELECT * FROM entries WHERE folderId = :f AND day = :d AND deletedAt IS NULL AND mode = 'main' LIMIT 1")
     suspend fun byDay(f: String, d: Long): EntryE?
+    @Query("SELECT * FROM entries WHERE folderId = :f AND day = :d AND deletedAt IS NULL ORDER BY updatedAt ASC")
+    suspend fun listDay(f: String, d: Long): List<EntryE>
     @Query("SELECT * FROM entries WHERE folderId = :f AND deletedAt IS NULL") suspend fun ofFolder(f: String): List<EntryE>
     @Query("SELECT * FROM entries WHERE dirty = 1") suspend fun dirty(): List<EntryE>
     @Query("SELECT * FROM entries") suspend fun all(): List<EntryE>

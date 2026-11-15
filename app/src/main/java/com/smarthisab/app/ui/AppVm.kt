@@ -3,6 +3,7 @@ package com.smarthisab.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smarthisab.app.data.*
+import com.smarthisab.app.domain.DraftRow
 import com.smarthisab.app.domain.Mode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -132,6 +133,28 @@ class AppVm(val repo: Repo, val wx: WeatherService) : ViewModel() {
     fun saveMoney(id: String?, day: LocalDate, kind: String, amount: Double, category: String?, note: String?, done: () -> Unit) {
         val f = current.value ?: return
         act(if (id == null) "সংরক্ষিত হয়েছে" else "সংশোধন সংরক্ষিত হয়েছে", done) { repo.saveMoneyEntry(f.id, id, day, kind, amount, category, note) }
+    }
+
+    /** সংরক্ষণ চলার সময় বাটন বন্ধ রাখতে (দুবার চাপলেও একবারই সংরক্ষণ) */
+    val saving = MutableStateFlow(false)
+
+    /** আয়-ব্যয়: একটা তারিখের সব আয় ও খরচের সারি একবারে */
+    fun saveDay(day: LocalDate, rows: List<DraftRow>, done: () -> Unit) {
+        val f = current.value ?: return
+        if (!saving.compareAndSet(false, true)) return
+        act("সংরক্ষিত হয়েছে", done) { try { repo.saveDay(f.id, day, rows) } finally { saving.value = false } }
+    }
+
+    fun deleteDay(day: LocalDate, done: () -> Unit = {}) {
+        val f = current.value ?: return
+        act(done = done) {
+            val gone = repo.deleteDay(f.id, day)
+            if (gone.isNotEmpty()) {
+                say("${com.smarthisab.app.domain.Fmt.date(day)} এর ${com.smarthisab.app.domain.Fmt.bn(gone.size)}টা এন্ট্রি মুছে গেছে", "ফেরান", 15000) {
+                    act("হিসাব ফিরে এসেছে") { repo.restoreEntries(gone.map { it.id }) }
+                }
+            }
+        }
     }
 
     fun deleteEntry(e: EntryE, done: () -> Unit = {}) {

@@ -1,6 +1,7 @@
 package com.smarthisab.app.ui
 
 import androidx.compose.animation.core.*
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.AlertDialog
@@ -20,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -49,19 +52,6 @@ private fun modeTint(m: Mode): Pair<Color, Color> = when (m) {
     Mode.PREMIUM -> Color(0xFFECFDF5) to Green
 }
 
-/** ফোল্ডার বাটনের পাশে বর্তমান ধরন; চাপলে বদলানো যায় */
-@Composable
-fun ModeChip(mode: Mode, onClick: () -> Unit) {
-    Row(
-        Modifier.bounceClick(true, onClick).clip(CircleShape).background(Sky800).padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Ico(modeIcon(mode), size = 15.dp, tint = Color.White)
-        Text(" ${mode.label} ", fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, softWrap = false)
-        Ico(Ic.chev, size = 12.dp, tint = Color.White, sw = 2.6f)
-    }
-}
-
 /** একটা ধরনের সারি (রেডিও সহ) — সেটিংস ও হোমের শিটে একই */
 @Composable
 fun ModeRow(mode: Mode, selected: Boolean, onClick: () -> Unit) {
@@ -77,18 +67,6 @@ fun ModeRow(mode: Mode, selected: Boolean, onClick: () -> Unit) {
         }
         if (selected) Box(Modifier.size(24.dp).clip(CircleShape).background(Sky800), contentAlignment = Alignment.Center) { Ico(Ic.check, size = 14.dp, tint = Color.White, sw = 3f) }
         else Box(Modifier.size(24.dp).border(2.dp, Color(0xFFCBD5E1), CircleShape))
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ModePickerSheet(vm: AppVm, mode: Mode, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
-        Column(Modifier.padding(bottom = 24.dp)) {
-            Text("হিসাবের ধরন", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Navy)
-            Mode.entries.forEach { m -> ModeRow(m, m == mode) { if (m != mode) vm.setMode(m); onDismiss() } }
-            Text("প্রতিটা ধরনের ফোল্ডার, এন্ট্রি ও খাত আলাদা। ধরন বদলালে অন্যটার তথ্য যেমন ছিল তেমনই থাকে।", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), fontSize = 12.sp, lineHeight = 17.sp, color = Slate)
-        }
     }
 }
 
@@ -235,4 +213,64 @@ fun CatsDialog(vm: AppVm, mode: Mode, expCustom: List<String>, incCustom: List<S
         },
         confirmButton = { TextButton(onDismiss) { Text("ঠিক আছে", fontWeight = FontWeight.Bold) } },
     )
+}
+
+/** খাতের নাম থেকে আইকন (নিজের যোগ করা খাতে ট্যাগ) */
+fun categoryIcon(name: String?): String = when (name) {
+    "নাস্তা" -> Ic.cup; "ভাত" -> Ic.bowl; "গাড়ি ভাড়া" -> Ic.bus; "বিক্রি" -> Ic.cart; "মজুরি" -> Ic.cash; "বেতন" -> Ic.wallet
+    Cats.OTHER, "অন্যান্য আয়" -> Ic.dots; else -> Ic.tag
+}
+
+/** ইতিহাসে আয়-ব্যয়ের দিন-কার্ড: ওপরে দিনের মোট, খুললে প্রতিটা আয়ের উৎস ও খরচের খাত আলাদা সারিতে */
+@Composable
+fun PremDayCard(date: LocalDate, dayEntries: List<EntryE>, shown: List<EntryE>, expanded: Boolean, locked: Boolean, onToggle: () -> Unit, onEdit: () -> Unit, modifier: Modifier = Modifier) {
+    val inc = dayEntries.sumOf { incomeOf(it) }
+    val exp = dayEntries.sumOf { expenseOf(it) }
+    val net = inc - exp
+    val nInc = dayEntries.count { it.kind == "income" }
+    val shape = RoundedCornerShape(20.dp)
+    Column(modifier.fillMaxWidth().shadow(6.dp, shape, ambientColor = Sky500, spotColor = Sky500).background(Color.White, shape).border(1.dp, Sky100, shape).clip(shape).animateContentSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Row(Modifier.fillMaxWidth().bounceClick(true, onToggle), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            DateChip(date, listOf(Sky400, Sky800))
+            Column(Modifier.weight(1f)) {
+                Text("আয় ${Fmt.taka(inc)} · খরচ ${Fmt.taka(exp)}", fontWeight = FontWeight.Bold, color = Navy, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${Fmt.bn(dayEntries.size)}টা এন্ট্রি · ${Fmt.bn(nInc)} আয়, ${Fmt.bn(dayEntries.size - nInc)} খরচ", fontSize = 12.sp, lineHeight = 16.sp, color = Slate, maxLines = 1)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text((if (net >= 0) "+" else "−") + Fmt.taka(kotlin.math.abs(net)), fontWeight = FontWeight.ExtraBold, color = if (net >= 0) Green else Rose, fontSize = 15.sp, maxLines = 1, softWrap = false)
+                Text("বাকি", fontSize = 12.sp, lineHeight = 16.sp, color = Slate)
+            }
+            Ico(Ic.chev, Modifier.graphicsLayer { rotationZ = if (expanded) 180f else 0f }, size = 18.dp, tint = Slate, sw = 2.4f)
+        }
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = Color(0xFFEEF3F8))
+            val incRows = shown.filter { it.kind == "income" }
+            val expRows = shown.filter { it.kind != "income" }
+            incRows.forEach { PremLine(it) }
+            if (incRows.isNotEmpty() && expRows.isNotEmpty()) HorizontalDivider(Modifier.padding(vertical = 2.dp), color = Color(0xFFEEF3F8))
+            expRows.forEach { PremLine(it) }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp).height(40.dp).clip(RoundedCornerShape(14.dp)).background(Sky100).bounceClick(true, onEdit),
+                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Ico(Ic.edit, size = 16.dp, tint = Sky800, sw = 2.4f)
+                Text(" এই দিনের হিসাব সম্পাদনা", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (locked) Slate else Sky800)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PremLine(e: EntryE) {
+    val income = e.kind == "income"
+    val col = if (income) Green else Rose
+    Row(Modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.size(28.dp).clip(RoundedCornerShape(9.dp)).background(if (income) Color(0xFFD1FAE5) else Color(0xFFFFE4E6)), contentAlignment = Alignment.Center) { Ico(categoryIcon(e.category), size = 16.dp, tint = col) }
+        Column(Modifier.weight(1f)) {
+            Text(e.category ?: if (income) "আয়" else "খরচ", fontSize = 14.sp, lineHeight = 20.sp, color = Navy, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!e.note.isNullOrBlank()) Text(e.note, fontSize = 12.sp, lineHeight = 16.sp, color = Slate, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text((if (income) "+" else "−") + Fmt.taka(e.amount), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = col, maxLines = 1, softWrap = false)
+    }
 }

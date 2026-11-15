@@ -49,7 +49,6 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
     val es by vm.currentEntries.collectAsState()
     val viewer by vm.viewer.collectAsState()
     val mode by vm.mode.collectAsState()
-    var pickMode by remember { mutableStateOf(false) }
     val today = remember { LocalDate.now() }
     val folder = f
 
@@ -75,10 +74,7 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
                 Column(Modifier.fillMaxWidth()) {
                     HeroText(viewer, today)
                     // ফোল্ডার বাছাই: লক্ষ্য কার্ডের ঠিক বাম কোণার ওপরে, কার্ডের অংশ নয়
-                    Row(Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FolderPill(vm, nav, folder)
-                        ModeChip(mode) { pickMode = true }
-                    }
+                    Row(Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp)) { FolderPill(vm, nav, folder) }
                     if (folder != null) GoalCard(mode, folder, es, today, Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp))
                 }
                 WeatherBadge(
@@ -97,7 +93,6 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
             }
         }
     }
-    if (pickMode) ModePickerSheet(vm, mode) { pickMode = false }
 }
 
 @Composable

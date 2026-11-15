@@ -1,7 +1,10 @@
 package com.smarthisab.app.data
 
 import android.util.Log
+import androidx.room.withTransaction
 import com.smarthisab.app.domain.Cats
+import com.smarthisab.app.domain.DraftRow
+import com.smarthisab.app.domain.planDaySave
 import com.smarthisab.app.domain.Fmt
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -39,11 +42,12 @@ import java.util.UUID
 class AppError(message: String) : Exception(message)
 enum class AuthState { Loading, In, Out }
 
-class Repo(db: AppDb, val supabase: SupabaseClient) {
+class Repo(private val db: AppDb, val supabase: SupabaseClient) {
     private val fd = db.folders()
     private val ed = db.entries()
     private val kd = db.kv()
     private val mutex = Mutex()
+    private val saveMutex = Mutex()
     private fun now() = System.currentTimeMillis()
 
     val folders: Flow<List<FolderE>> = fd.observe()
@@ -222,6 +226,42 @@ class Repo(db: AppDb, val supabase: SupabaseClient) {
         val n = note?.trim()?.takeIf { it.isNotEmpty() }
         ed.upsert(EntryE(id ?: UUID.randomUUID().toString(), folderId, day.toEpochDay(), 0, 0.0, 0.0, n, null, now(), true, old?.version ?: 0, f.mode, k, cat, amount))
     }
+    /**
+     * আয়-ব্যয়: একটা তারিখের সব আয় ও খরচের সারি একসাথে সংরক্ষণ। বদলানো সারি আপডেট, নতুন সারি যোগ,
+     * ফর্মে নেই এমন আগের সারি মুছে যায় (soft delete) — সবই একটা লেনদেনে। সারির id স্থির, তাই দুবার চাপলেও ডুপ্লিকেট হয় না।
+     */
+    suspend fun saveDay(folderId: String, day: LocalDate, drafts: List<DraftRow>) = saveMutex.withLock {
+        val f = fd.get(folderId) ?: throw AppError("ফোল্ডার পাওয়া যায়নি")
+        requireOpen(f)
+        if (f.mode != "prem") throw AppError("এই ধরনে একসাথে আয়-ব্যয়ের ফর্ম চলে না")
+        if (drafts.any { it.amount > 0 && it.category.isNullOrBlank() }) throw AppError("সব সারির খাত বাছুন")
+        val plan = planDaySave(f, day, ed.listDay(folderId, day.toEpochDay()), drafts, now())
+        db.withTransaction {
+            if (day.toEpochDay() < f.startDay) fd.upsert(f.copy(startDay = day.toEpochDay(), updatedAt = now(), dirty = true))
+            plan.upserts.forEach { ed.upsert(it) }
+            plan.deletes.forEach { ed.upsert(it) }
+        }
+    }
+
+    /** একটা তারিখের সব এন্ট্রি মোছে; ফেরানোর জন্য মোছা এন্ট্রিগুলো ফেরত দেয় */
+    suspend fun deleteDay(folderId: String, day: LocalDate): List<EntryE> = saveMutex.withLock {
+        val f = fd.get(folderId) ?: throw AppError("ফোল্ডার পাওয়া যায়নি")
+        requireOpen(f)
+        val list = ed.listDay(folderId, day.toEpochDay())
+        val ts = now()
+        db.withTransaction { list.forEach { ed.upsert(it.copy(deletedAt = ts, updatedAt = ts, dirty = true)) } }
+        list
+    }
+
+    suspend fun restoreEntries(ids: List<String>) = saveMutex.withLock {
+        db.withTransaction {
+            ids.forEach { id ->
+                val e = ed.get(id) ?: return@forEach
+                if (e.deletedAt != null) { requireOpen(fd.get(e.folderId)); ed.upsert(e.copy(deletedAt = null, updatedAt = now(), dirty = true)) }
+            }
+        }
+    }
+
     suspend fun deleteEntry(id: String): Boolean {
         val e = ed.get(id) ?: return false
         requireOpen(fd.get(e.folderId))

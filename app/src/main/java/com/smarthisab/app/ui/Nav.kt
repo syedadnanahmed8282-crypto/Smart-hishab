@@ -129,9 +129,20 @@ fun AppRoot(vm: AppVm) {
             composable("history") { HistoryScreen(vm, nav) }
             composable("report") { ReportScreen(vm, nav) }
             composable("settings") { SettingsScreen(vm, nav) }
-            composable("entry?id={id}", listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })) {
+            composable(
+                "entry?id={id}&day={day}",
+                listOf(
+                    navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("day") { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
+            ) {
                 val mode by vm.mode.collectAsState()
-                if (mode == Mode.MAIN) EntryScreen(vm, nav, it.arguments?.getString("id")) else MoneyEntryScreen(vm, nav, it.arguments?.getString("id"))
+                val id = it.arguments?.getString("id")
+                when (mode) {
+                    Mode.MAIN -> EntryScreen(vm, nav, id)
+                    Mode.ALT -> MoneyEntryScreen(vm, nav, id)
+                    Mode.PREMIUM -> DayEntryScreen(vm, nav, it.arguments?.getString("day")?.toLongOrNull(), id)
+                }
             }
             composable("folders") { FoldersScreen(vm, nav) }
             composable("newfolder") { NewFolderScreen(vm, nav) }
