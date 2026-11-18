@@ -20,6 +20,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
@@ -54,10 +55,10 @@ private fun modeTint(m: Mode): Pair<Color, Color> = when (m) {
 
 /** একটা ধরনের সারি (রেডিও সহ) — সেটিংস ও হোমের শিটে একই */
 @Composable
-fun ModeRow(mode: Mode, selected: Boolean, onClick: () -> Unit) {
+fun ModeRow(mode: Mode, selected: Boolean, dim: Boolean = false, onClick: () -> Unit) {
     val (bg, fg) = modeTint(mode)
     Row(
-        Modifier.fillMaxWidth().background(if (selected) Color(0xFFEAF6FE) else Color.Transparent).bounceClick(true, onClick).heightIn(min = 60.dp).padding(horizontal = 14.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().alpha(if (dim) .45f else 1f).background(if (selected) Color(0xFFEAF6FE) else Color.Transparent).bounceClick(true, onClick).heightIn(min = 60.dp).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(bg), contentAlignment = Alignment.Center) { Ico(modeIcon(mode), size = 18.dp, tint = fg) }
@@ -145,9 +146,9 @@ fun DayRowItem(r: DayRow, mode: Mode, modifier: Modifier = Modifier) {
     ) {
         DateChip(r.date, listOf(Sky400, Sky800))
         Column(Modifier.weight(1f)) {
-            Text(
+            FitText(
                 if (mode == Mode.ALT) (r.cats.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: "খরচ") else "আয় ${Fmt.taka(r.income)} · খরচ ${Fmt.taka(r.expense)}",
-                fontWeight = FontWeight.Bold, color = Navy, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                Modifier.fillMaxWidth(), maxSize = 15.sp, minSize = 10.sp, color = Navy, fontWeight = FontWeight.Bold, lineHeight = 20.sp,
             )
             Text("${Fmt.bn(r.count)}টা এন্ট্রি", fontSize = 12.sp, color = Slate)
         }
@@ -223,7 +224,7 @@ fun categoryIcon(name: String?): String = when (name) {
 
 /** ইতিহাসে আয়-ব্যয়ের দিন-কার্ড: ওপরে দিনের মোট, খুললে প্রতিটা আয়ের উৎস ও খরচের খাত আলাদা সারিতে */
 @Composable
-fun PremDayCard(date: LocalDate, dayEntries: List<EntryE>, shown: List<EntryE>, expanded: Boolean, locked: Boolean, onToggle: () -> Unit, onEdit: () -> Unit, modifier: Modifier = Modifier) {
+fun PremDayCard(mode: Mode, date: LocalDate, dayEntries: List<EntryE>, shown: List<EntryE>, expanded: Boolean, locked: Boolean, onToggle: () -> Unit, onEdit: () -> Unit, modifier: Modifier = Modifier) {
     val inc = dayEntries.sumOf { incomeOf(it) }
     val exp = dayEntries.sumOf { expenseOf(it) }
     val net = inc - exp
@@ -233,10 +234,22 @@ fun PremDayCard(date: LocalDate, dayEntries: List<EntryE>, shown: List<EntryE>, 
         Row(Modifier.fillMaxWidth().bounceClick(true, onToggle), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             DateChip(date, listOf(Sky400, Sky800))
             Column(Modifier.weight(1f)) {
-                Text("আয় ${Fmt.taka(inc)} · খরচ ${Fmt.taka(exp)}", fontWeight = FontWeight.Bold, color = Navy, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${Fmt.bn(dayEntries.size)}টা এন্ট্রি · ${Fmt.bn(nInc)} আয়, ${Fmt.bn(dayEntries.size - nInc)} খরচ", fontSize = 12.sp, lineHeight = 16.sp, color = Slate, maxLines = 1)
+                if (mode == Mode.ALT) {
+                    FitText("খরচ ${Fmt.taka(exp)}", Modifier.fillMaxWidth(), maxSize = 16.sp, minSize = 10.sp, color = Rose, fontWeight = FontWeight.ExtraBold, lineHeight = 22.sp)
+                    Text("${Fmt.bn(dayEntries.size)}টা খরচ", fontSize = 12.sp, lineHeight = 16.sp, color = Slate, maxLines = 1)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Ico(Ic.up, size = 14.dp, tint = Green, sw = 2.6f)
+                        FitText("আয় ${Fmt.taka(inc)}", Modifier.weight(1f).padding(start = 6.dp), maxSize = 14.sp, minSize = 9.sp, color = Green, fontWeight = FontWeight.Bold, lineHeight = 20.sp)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Ico(Ic.dn, size = 14.dp, tint = Rose, sw = 2.6f)
+                        FitText("খরচ ${Fmt.taka(exp)}", Modifier.weight(1f).padding(start = 6.dp), maxSize = 14.sp, minSize = 9.sp, color = Rose, fontWeight = FontWeight.Bold, lineHeight = 20.sp)
+                    }
+                    Text("${Fmt.bn(dayEntries.size)}টা এন্ট্রি · ${Fmt.bn(nInc)} আয়, ${Fmt.bn(dayEntries.size - nInc)} খরচ", fontSize = 12.sp, lineHeight = 16.sp, color = Slate, maxLines = 1)
+                }
             }
-            Column(horizontalAlignment = Alignment.End) {
+            if (mode != Mode.ALT) Column(horizontalAlignment = Alignment.End) {
                 Text((if (net >= 0) "+" else "−") + Fmt.taka(kotlin.math.abs(net)), fontWeight = FontWeight.ExtraBold, color = if (net >= 0) Green else Rose, fontSize = 15.sp, maxLines = 1, softWrap = false)
                 Text("বাকি", fontSize = 12.sp, lineHeight = 16.sp, color = Slate)
             }

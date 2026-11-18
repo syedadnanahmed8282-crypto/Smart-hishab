@@ -83,6 +83,7 @@ fun AppRoot(vm: AppVm) {
     val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     BackHandler(enabled = isTab && route != "home") { nav.goTab("home") }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = Sky50,
         snackbarHost = {
@@ -140,12 +141,13 @@ fun AppRoot(vm: AppVm) {
                 val id = it.arguments?.getString("id")
                 when (mode) {
                     Mode.MAIN -> EntryScreen(vm, nav, id)
-                    Mode.ALT -> MoneyEntryScreen(vm, nav, id)
-                    Mode.PREMIUM -> DayEntryScreen(vm, nav, it.arguments?.getString("day")?.toLongOrNull(), id)
+                    Mode.ALT, Mode.PREMIUM -> DayEntryScreen(vm, nav, it.arguments?.getString("day")?.toLongOrNull(), id)
                 }
             }
             composable("folders") { FoldersScreen(vm, nav) }
             composable("newfolder") { NewFolderScreen(vm, nav) }
         }
+    }
+    if (!loggedOut) CalculatorHost(vm, nav)
     }
 }

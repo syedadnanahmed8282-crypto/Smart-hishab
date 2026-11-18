@@ -2,6 +2,9 @@ package com.smarthisab.app.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.smarthisab.app.data.*
 import com.smarthisab.app.domain.DraftRow
 import com.smarthisab.app.domain.Mode
@@ -137,6 +140,11 @@ class AppVm(val repo: Repo, val wx: WeatherService) : ViewModel() {
 
     /** সংরক্ষণ চলার সময় বাটন বন্ধ রাখতে (দুবার চাপলেও একবারই সংরক্ষণ) */
     val saving = MutableStateFlow(false)
+
+    /** ভাসমান ক্যালকুলেটর (সব ট্যাবে থাকে) ও তার থেকে এন্ট্রিতে পাঠানো মান */
+    val calc = CalcState()
+    var prefill by mutableStateOf<CalcPrefill?>(null)
+    fun takePrefill(): CalcPrefill? { val p = prefill; prefill = null; return p }
 
     /** আয়-ব্যয়: একটা তারিখের সব আয় ও খরচের সারি একবারে */
     fun saveDay(day: LocalDate, rows: List<DraftRow>, done: () -> Unit) {

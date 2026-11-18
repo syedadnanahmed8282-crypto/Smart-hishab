@@ -42,6 +42,13 @@ private fun EntryForm(vm: AppVm, nav: NavHostController, f: FolderE, entryId: St
     var exp by rememberSaveable { mutableStateOf(existing?.expense?.takeIf { it > 0 }?.roundToInt()?.toString() ?: "") }
     var note by rememberSaveable { mutableStateOf(existing?.note ?: "") }
     var off by rememberSaveable { mutableStateOf(existing?.quantity == 0) }
+    // ক্যালকুলেটর থেকে পাঠানো মান (মাল বা খরচ)
+    LaunchedEffect(Unit) {
+        vm.takePrefill()?.let { p ->
+            val n = p.value.roundToInt().toString()
+            if (p.target == "qty") { qty = n; off = false } else if (p.target == "exp") exp = n
+        }
+    }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
 

@@ -60,7 +60,7 @@ class Repo(private val db: AppDb, val supabase: SupabaseClient) {
     // ---------- হিসাবের ধরন ও খাত ----------
     /** প্রতিটা ধরনের বর্তমান ফোল্ডার আলাদা মনে থাকে ("folder" = মালের হিসাব, আগের ডাটার সাথে মিল রেখে) */
     private fun folderKey(mode: String) = if (mode == "main") "folder" else "folder_$mode"
-    suspend fun setMode(mode: String) = kd.put(KvE("mode", mode))
+    suspend fun setMode(mode: String) { requireEditable(); kd.put(KvE("mode", mode)) }
 
     fun customCats(mode: String, kind: String): Flow<List<String>> =
         kd.observe("cats_${mode}_$kind").map { v -> v?.split("\n")?.filter { it.isNotBlank() } ?: emptyList() }
@@ -233,7 +233,7 @@ class Repo(private val db: AppDb, val supabase: SupabaseClient) {
     suspend fun saveDay(folderId: String, day: LocalDate, drafts: List<DraftRow>) = saveMutex.withLock {
         val f = fd.get(folderId) ?: throw AppError("ফোল্ডার পাওয়া যায়নি")
         requireOpen(f)
-        if (f.mode != "prem") throw AppError("এই ধরনে একসাথে আয়-ব্যয়ের ফর্ম চলে না")
+        if (f.mode == "main") throw AppError("মালের হিসাবে দিনের মাল দিয়ে এন্ট্রি দিন")
         if (drafts.any { it.amount > 0 && it.category.isNullOrBlank() }) throw AppError("সব সারির খাত বাছুন")
         val plan = planDaySave(f, day, ed.listDay(folderId, day.toEpochDay()), drafts, now())
         db.withTransaction {

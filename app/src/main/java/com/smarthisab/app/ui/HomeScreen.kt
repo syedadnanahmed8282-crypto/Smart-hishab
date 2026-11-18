@@ -1,6 +1,16 @@
 package com.smarthisab.app.ui
 
 import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.input.pointer.pointerInput
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -88,9 +98,11 @@ fun HomeScreen(vm: AppVm, nav: NavHostController) {
         }
         if (folder != null) {
             val locked = folder.closed || viewer
-            Fab(locked, Modifier.align(Alignment.BottomEnd).padding(24.dp)) {
-                if (!locked) nav.navigate("entry") else vm.say(if (viewer) "ভিউয়ার মোডে নতুন এন্ট্রি বন্ধ" else "ফোল্ডার সমাপ্ত, আগে আবার চালু করুন")
-            }
+            SpeedDialFab(
+                locked,
+                onEntry = { if (!locked) nav.navigate("entry") else vm.say(if (viewer) "ভিউয়ার মোডে নতুন এন্ট্রি বন্ধ" else "ফোল্ডার সমাপ্ত, আগে আবার চালু করুন") },
+                onCalc = { vm.calc.open() },
+            )
         }
     }
 }
@@ -187,7 +199,7 @@ private fun GoalCard(mode: Mode, f: FolderE, es: List<EntryE>, today: LocalDate,
                 )
             }
         }
-        if (f.closed && mode == Mode.MAIN) SealStamp(tot, Cycle.start(f, es), Cycle.end(f, es, today), Modifier.align(Alignment.Center).padding(top = 40.dp).widthIn(max = 290.dp))
+        if (f.closed) SealStamp(mode, tot, Cycle.start(f, es), Cycle.end(f, es, today), Cycle.categoryTotals(es, "expense").firstOrNull()?.first, Modifier.align(Alignment.Center).padding(top = 40.dp))
     }
 }
 
@@ -293,18 +305,46 @@ private fun EmptyHome(nav: NavHostController, mode: Mode) {
     }
 }
 
+/** ছোট (৫০) বোতাম। চাপলে আড়াল নামে, বোতাম ঘুরে × হয়, দুটো আইকন স্প্রিংয়ে ওঠে: নতুন এন্ট্রি ও ক্যালকুলেটর */
 @Composable
-private fun Fab(locked: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun SpeedDialFab(locked: Boolean, onEntry: () -> Unit, onCalc: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val rot by animateFloatAsState(if (open) 45f else 0f, spring(dampingRatio = .55f, stiffness = 380f), label = "rot")
     val t = rememberInfiniteTransition(label = "fab")
-    val bob by t.animateFloat(0f, -6f, infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "bob")
+    val bob by t.animateFloat(0f, -5f, infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "bob")
     val pulse by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2400, easing = LinearEasing)), label = "pulse")
-    val shape = RoundedCornerShape(22.dp)
-    Box(modifier.offset(y = bob.dp).size(60.dp)) {
-        if (!locked) Box(Modifier.fillMaxSize().graphicsLayer { val k = 1f + .7f * pulse; scaleX = k; scaleY = k; alpha = .5f * (1f - pulse) }.background(Sky400, shape))
-        Box(
-            Modifier.fillMaxSize().bounceClick(true, onClick).shadow(14.dp, shape, ambientColor = Sky800, spotColor = Sky800).clip(shape)
-                .background(if (locked) Brush.linearGradient(listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8))) else Brush.linearGradient(listOf(Sky400, Sky600))).glossy(22.dp),
-            contentAlignment = Alignment.Center,
-        ) { Ico(if (locked) Ic.lock else Ic.plus, size = 28.dp, tint = if (locked) Color(0xFF334155) else Color.White, sw = 2.8f) }
+    val shape = RoundedCornerShape(18.dp)
+    Box(Modifier.fillMaxSize()) {
+        AnimatedVisibility(open, enter = fadeIn(), exit = fadeOut()) {
+            Box(Modifier.fillMaxSize().background(Color(0x61082F49)).pointerInput(Unit) { detectTapGestures { open = false } })
+        }
+        Column(Modifier.align(Alignment.BottomEnd).padding(24.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            val enter = fadeIn() + scaleIn(spring(dampingRatio = .55f, stiffness = 320f), initialScale = .5f, transformOrigin = TransformOrigin(1f, 1f)) + slideInVertically { it / 2 }
+            val exit = fadeOut(tween(100)) + scaleOut(targetScale = .6f, transformOrigin = TransformOrigin(1f, 1f))
+            AnimatedVisibility(open, enter = enter, exit = exit) {
+                MiniAction("নতুন এন্ট্রি", Ic.edit, Brush.linearGradient(listOf(Sky600, Sky800)), dim = locked) { open = false; onEntry() }
+            }
+            AnimatedVisibility(open, enter = enter, exit = exit) {
+                MiniAction("ক্যালকুলেটর", Ic.calc, Brush.linearGradient(listOf(Color(0xFF34D399), Color(0xFF047857)))) { open = false; onCalc() }
+            }
+            Box(Modifier.offset(y = if (open) 0.dp else bob.dp).size(50.dp)) {
+                if (!open) Box(Modifier.fillMaxSize().graphicsLayer { val k = 1f + .7f * pulse; scaleX = k; scaleY = k; alpha = .5f * (1f - pulse) }.background(Sky400, shape))
+                Box(
+                    Modifier.fillMaxSize().bounceClick(true) { open = !open }.shadow(14.dp, shape, ambientColor = Sky800, spotColor = Sky800).clip(shape)
+                        .background(Brush.linearGradient(listOf(Sky400, Sky600))).glossy(18.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Ico(Ic.plus, Modifier.graphicsLayer { rotationZ = rot }, size = 26.dp, tint = Color.White, sw = 2.8f) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniAction(label: String, icon: String, brush: Brush, dim: Boolean = false, onClick: () -> Unit) {
+    Row(Modifier.alpha(if (dim) .55f else 1f).bounceClick(true, onClick), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(label, Modifier.shadow(6.dp, CircleShape).background(Color.White, CircleShape).padding(horizontal = 12.dp, vertical = 5.dp), fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, color = Navy, maxLines = 1, softWrap = false)
+        Box(Modifier.size(46.dp).shadow(10.dp, CircleShape, ambientColor = Sky800, spotColor = Sky800).clip(CircleShape).background(brush), contentAlignment = Alignment.Center) {
+            Ico(icon, size = 22.dp, tint = Color.White, sw = 2.2f)
+        }
     }
 }

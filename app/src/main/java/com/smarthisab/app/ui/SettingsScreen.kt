@@ -113,7 +113,7 @@ fun SettingsScreen(vm: AppVm, nav: NavHostController) {
             Group(3) {
                 Mode.entries.forEachIndexed { i, m ->
                     if (i > 0) HorizontalDivider(Modifier.padding(start = 58.dp), color = Line)
-                    ModeRow(m, m == mode) { if (m != mode) vm.setMode(m) }
+                    ModeRow(m, m == mode, dim = viewer) { if (viewer) vm.say("ভিউয়ার মোডে হিসাবের ধরন বদলানো যায় না") else if (m != mode) vm.setMode(m) }
                 }
             }
             Text("প্রতিটা ধরনের ফোল্ডার, এন্ট্রি ও খাত আলাদা। ধরন বদলালে অন্যটার তথ্য যেমন ছিল তেমনই থাকে।", Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 12.sp, lineHeight = 17.sp, color = Gray)

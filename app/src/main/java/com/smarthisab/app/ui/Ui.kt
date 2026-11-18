@@ -327,34 +327,40 @@ fun TwoLineChart(income: List<Double>, expense: List<Double>, labels: List<Strin
     }
 }
 
-/** লাল গোল সিল: CLOSED & PAID — ধপাস করে বসে */
+/** CLOSED & PAID সিল: রাবার-স্ট্যাম্পের মতো ঈষৎ বাঁকা, দুই স্তরের বর্ডার, কালির ছিটেফোঁটা; ধপ করে বসে। তিন ধরনেই। */
 @Composable
-fun SealStamp(t: Totals, from: LocalDate, to: LocalDate, modifier: Modifier = Modifier) {
-    val red = Color(0xFFB91C1C)
-    val scale = remember { Animatable(2.4f) }
-    val alpha = remember { Animatable(0f) }
+fun SealStamp(mode: Mode, t: Totals, from: LocalDate, to: LocalDate, topCategory: String?, modifier: Modifier = Modifier) {
+    val ink = Color(0xFFB91C2B)
+    val scale = remember { Animatable(1.9f) }
+    val fade = remember { Animatable(0f) }
+    val rot = remember { Animatable(-14f) }
     LaunchedEffect(Unit) {
-        delay(500)
-        launch { alpha.animateTo(1f, tween(150)) }
-        scale.animateTo(1f, spring(dampingRatio = .45f, stiffness = Spring.StiffnessMedium))
+        delay(450)
+        launch { fade.animateTo(.92f, tween(120)) }
+        launch { rot.animateTo(-7f, spring(dampingRatio = .5f, stiffness = Spring.StiffnessMedium)) }
+        scale.animateTo(1f, spring(dampingRatio = .42f, stiffness = Spring.StiffnessMedium))
     }
-    val shape = RoundedCornerShape(16.dp)
-    Box(modifier.graphicsLayer { rotationZ = -6f; scaleX = scale.value; scaleY = scale.value; this.alpha = alpha.value }
-        .background(Color.White.copy(alpha = .93f), shape).border(3.dp, red, shape).padding(5.dp)) {
-        Column(Modifier.border(1.5.dp, red, RoundedCornerShape(11.dp)).padding(horizontal = 12.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("★ CLOSED & PAID ★", color = red, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, letterSpacing = 1.5.sp)
-            HorizontalDivider(Modifier.padding(vertical = 4.dp), 1.5.dp, red)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Column(Modifier.weight(1f)) { SealCell("মোট মাল", "${Fmt.bn(t.pieces)} পিস", red); Spacer(Modifier.height(4.dp)); SealCell("মোট খরচ", Fmt.taka(t.expense), red) }
-                Column(Modifier.weight(1f)) { SealCell("মোট টাকা (আয়)", Fmt.taka(t.income), red); Spacer(Modifier.height(4.dp)); SealCell("বাকি টাকা", Fmt.taka(t.profit), red) }
+    // কালির ছিটেফোঁটা (প্রতিবার একই জায়গায়)
+    val specks = remember { val r = java.util.Random(7); List(150) { Triple(r.nextFloat(), r.nextFloat(), .6f + r.nextFloat() * 1.8f) } }
+    val l1 = (if (mode == Mode.ALT) "সমাপ্ত · হিসাব বন্ধ · " else "সমাপ্ত · পরিশোধিত · ") + Fmt.range(from, to)
+    val (l2, l3) = when (mode) {
+        Mode.MAIN -> Pair("মাল ${Fmt.bn(t.pieces)} · আয় ${Fmt.taka(t.income)}", "খরচ ${Fmt.taka(t.expense)} · বাকি ${Fmt.taka(t.profit)}")
+        Mode.ALT -> Pair("মোট খরচ ${Fmt.taka(t.expense)} · গড় ${Fmt.taka(t.avgExpense)}/দিন", "এন্ট্রির দিন ${Fmt.bn(t.days)}" + (topCategory?.let { " · বড় খাত $it" } ?: ""))
+        Mode.PREMIUM -> Pair("আয় ${Fmt.taka(t.income)} · খরচ ${Fmt.taka(t.expense)}", "বাকি ${Fmt.taka(t.profit)} · এন্ট্রির দিন ${Fmt.bn(t.days)}")
+    }
+    Box(
+        modifier.width(232.dp)
+            .graphicsLayer { rotationZ = rot.value; scaleX = scale.value; scaleY = scale.value; alpha = fade.value; compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                specks.forEach { (fx, fy, r) -> drawCircle(Color.Black, r.dp.toPx() * .6f, Offset(fx * size.width, fy * size.height), blendMode = BlendMode.DstOut) }
             }
-            HorizontalDivider(Modifier.padding(top = 5.dp, bottom = 3.dp), 1.5.dp, red)
-            Text("${Fmt.range(from, to)} ${Fmt.bn(to.year.toString())} · ${Fmt.bn(t.days)} দিন", color = red, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            .border(4.dp, ink, RoundedCornerShape(13.dp)).padding(6.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().border(1.3.dp, ink, RoundedCornerShape(9.dp)).padding(horizontal = 10.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("CLOSED & PAID", color = ink, fontWeight = FontWeight.Black, fontSize = 24.sp, lineHeight = 30.sp, letterSpacing = 2.sp, maxLines = 1, softWrap = false)
+            Box(Modifier.padding(vertical = 3.dp).fillMaxWidth().height(1.3.dp).background(ink))
+            listOf(l1, l2, l3).forEach { FitText(it, Modifier.fillMaxWidth(), maxSize = 12.sp, minSize = 8.sp, color = ink, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 17.sp) }
         }
     }
-}
-
-@Composable
-private fun SealCell(label: String, value: String, c: Color) {
-    Column { Text(label, color = c, fontSize = 12.sp, fontWeight = FontWeight.SemiBold); Text(value, color = c, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold) }
 }

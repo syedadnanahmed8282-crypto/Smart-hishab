@@ -65,6 +65,8 @@ private fun DayForm(vm: AppVm, nav: NavHostController, f: FolderE, startDay: Lon
     val all by vm.entries.collectAsState()
     val viewer by vm.viewer.collectAsState()
     val saving by vm.saving.collectAsState()
+    val mode by vm.mode.collectAsState()
+    val alt = mode == Mode.ALT
     val expCustom by vm.expenseCustom.collectAsState()
     val incCustom by vm.incomeCustom.collectAsState()
     val today = remember { LocalDate.now() }
@@ -80,7 +82,7 @@ private fun DayForm(vm: AppVm, nav: NavHostController, f: FolderE, startDay: Lon
     val loaded = remember(day) { all.filter { it.deletedAt == null && it.day == day.toEpochDay() }.sortedBy { it.updatedAt } }
     val rows: SnapshotStateList<RowUi> = remember(day) {
         mutableStateListOf<RowUi>().apply {
-            if (loaded.isEmpty()) { add(newRow("income")); add(newRow("expense")) }
+            if (loaded.isEmpty()) { if (!alt) add(newRow("income")); add(newRow("expense")) }
             else addAll(loaded.map { RowUi(it.id, it.kind, it.category, amtText(it.amount), it.note, true, it.category, it.amount) })
         }
     }
@@ -110,9 +112,21 @@ private fun DayForm(vm: AppVm, nav: NavHostController, f: FolderE, startDay: Lon
         if (r.existing) update(id) { it.copy(removed = !it.removed) } else rows.remove(r)
     }
 
+    // ক্যালকুলেটর থেকে পাঠানো মান: আগের ফাঁকা সারিতে বসে, না থাকলে নতুন সারি
+    var prefill by remember { mutableStateOf(vm.takePrefill()) }
+    LaunchedEffect(prefill) {
+        val p = prefill ?: return@LaunchedEffect
+        val kind = if (p.target == "inc") "income" else "expense"
+        val text = if (p.value % 1.0 == 0.0) p.value.toLong().toString() else p.value.toString()
+        val target = rows.firstOrNull { !it.existing && it.kind == kind && it.amount.isEmpty() }
+        if (target != null) { update(target.id) { it.copy(amount = text) }; focusId = target.id }
+        else { val r = newRow(kind).copy(amount = text); rows.add(r); focusId = r.id }
+        prefill = null
+    }
+
     ScreenBox {
         TopBar(
-            "${Fmt.dateY(day)} · ${if (loaded.isNotEmpty()) "সম্পাদনা" else "আয়-ব্যয়"}", "দৈনিক হিসাব", { tryExit() },
+            "${Fmt.dateY(day)} · ${if (loaded.isNotEmpty()) "সম্পাদনা" else mode.label}", if (alt) "দৈনিক খরচ" else "দৈনিক হিসাব", { tryExit() },
             right = {
                 if (loaded.isNotEmpty() && !locked) Box {
                     IconButton({ menuOpen = true }) { Ico(Ic.more, size = 22.dp, tint = Sky700, sw = 3.4f) }
@@ -140,14 +154,24 @@ private fun DayForm(vm: AppVm, nav: NavHostController, f: FolderE, startDay: Lon
             // লাইভ সারাংশ
             BlueCard(Modifier.fillMaxWidth(), delay = 1) {
                 Row(Modifier.padding(vertical = 10.dp, horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SumCell("আয়", aInc.toDouble(), Color.White, Color.White, Modifier.weight(1f))
-                    Box(Modifier.width(1.dp).height(40.dp).background(Color.White.copy(alpha = .22f)))
-                    SumCell("খরচ", aExp.toDouble(), Color(0xFFFFE4E6), Pink, Modifier.weight(1f))
-                    Box(Modifier.width(1.dp).height(40.dp).background(Color.White.copy(alpha = .22f)))
-                    SumCell("বাকি", aBal.toDouble(), Color(0xFFA7F3D0), Color(0xFF6EE7B7), Modifier.weight(1f))
+                    if (alt) {
+                        val limit = f.expenseLimit?.takeIf { it > 0 }
+                        val left = limit?.let { it - (Cycle.totals(f, all.filter { e -> e.day != day.toEpochDay() }).expense + exp) }
+                        SumCell("আজকের খরচ", Fmt.taka(aExp.toDouble()), Color(0xFFFFE4E6), Pink, Modifier.weight(1f))
+                        Box(Modifier.width(1.dp).height(40.dp).background(Color.White.copy(alpha = .22f)))
+                        SumCell("সারি", "${Fmt.bn(nExp)}টা", Color.White, Color.White, Modifier.weight(1f))
+                        Box(Modifier.width(1.dp).height(40.dp).background(Color.White.copy(alpha = .22f)))
+                        SumCell("সীমার বাকি", if (left == null) "—" else Fmt.taka(left.coerceAtLeast(0.0)), Color(0xFFA7F3D0), Color(0xFF6EE7B7), Modifier.weight(1f))
+                    } else {
+                        SumCell("আয়", Fmt.taka(aInc.toDouble()), Color.White, Color.White, Modifier.weight(1f))
+                        Box(Modifier.width(1.dp).height(40.dp).background(Color.White.copy(alpha = .22f)))
+                        SumCell("খরচ", Fmt.taka(aExp.toDouble()), Color(0xFFFFE4E6), Pink, Modifier.weight(1f))
+                        Box(Modifier.width(1.dp).height(40.dp).background(Color.White.copy(alpha = .22f)))
+                        SumCell("বাকি", Fmt.taka(aBal.toDouble()), Color(0xFFA7F3D0), Color(0xFF6EE7B7), Modifier.weight(1f))
+                    }
                 }
             }
-            DaySection("income", rows.filter { it.kind == "income" }, !locked, focusId, live.filter { it.kind == "income" }.sumOf { amt(it) },
+            if (!alt) DaySection("income", rows.filter { it.kind == "income" }, !locked, focusId, live.filter { it.kind == "income" }.sumOf { amt(it) },
                 onAdd = { val r = newRow("income"); rows.add(r); focusId = r.id },
                 onPick = { sheetFor = it }, onAmount = { id, v -> update(id) { r -> r.copy(amount = v) } },
                 onRemove = { remove(it) }, onFocus = { focusId = it },
@@ -205,13 +229,13 @@ private fun DayForm(vm: AppVm, nav: NavHostController, f: FolderE, startDay: Lon
 }
 
 @Composable
-private fun SumCell(label: String, value: Double, valueColor: Color, dot: Color, modifier: Modifier) {
+private fun SumCell(label: String, text: String, valueColor: Color, dot: Color, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
             Text(" $label", fontSize = 12.sp, lineHeight = 16.sp, color = Sky100)
         }
-        FitText(Fmt.taka(value), Modifier.fillMaxWidth(), maxSize = 20.sp, minSize = 11.sp, color = valueColor, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center, lineHeight = 26.sp)
+        FitText(text, Modifier.fillMaxWidth(), maxSize = 20.sp, minSize = 11.sp, color = valueColor, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center, lineHeight = 26.sp)
     }
 }
 

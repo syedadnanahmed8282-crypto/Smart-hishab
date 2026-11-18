@@ -118,6 +118,11 @@ object Ic {
     val cash = "M3 7 h18 v10 H3 z " + circle(12, 12, 3)
     val tag = "M3 12 V4 h8 l10 10 l-8 8 z M7.5 8 h0.01"
     val dn = "M12 5 v14 M19 12 l-7 7 l-7 -7"
+    val calc = "M6 3 h12 a2 2 0 0 1 2 2 v14 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V5 a2 2 0 0 1 2 -2 z M8 7 h8 M8 12 h0.01 M12 12 h0.01 M16 12 h0.01 M8 16 h0.01 M12 16 h0.01 M16 16 h0.01"
+    val hand = "M9 11 V5 a1.5 1.5 0 0 1 3 0 v5 M12 10 V4 a1.5 1.5 0 0 1 3 0 v6 M15 11 V6 a1.5 1.5 0 0 1 3 0 v7 a6 6 0 0 1 -6 6 h-1 a6 6 0 0 1 -5 -3 l-2 -4 a1.5 1.5 0 0 1 2.5 -1.5 L9 14"
+    val expand = "M14 4 h6 v6 M20 4 l-7 7 M10 20 H4 v-6 M4 20 l7 -7"
+    val dock = "M21 4 v16 M14 8 l4 4 l-4 4 M3 12 h11"
+    val minus = "M5 12 h14"
     val mail = "M6 5 h12 a3 3 0 0 1 3 3 v8 a3 3 0 0 1 -3 3 H6 a3 3 0 0 1 -3 -3 V8 a3 3 0 0 1 3 -3 z M3 8 l9 6 l9 -6"
     val user = circle(12, 8, 4) + "M4 21 a8 8 0 0 1 16 0"
     val key = circle(8, 15, 4) + "M11 12 l9 -9 M16 7 l3 3"

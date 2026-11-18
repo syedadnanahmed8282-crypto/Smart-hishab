@@ -100,17 +100,17 @@ fun WeatherBadge(wx: Wx?, loading: Boolean, hasKey: Boolean, onClick: () -> Unit
         Spacer(Modifier.height(4.dp))
         val old = wx != null && System.currentTimeMillis() - wx.at > 3 * 3600_000L
         val label = when {
-            wx != null -> "${wx.text} · অনুভূত ${Fmt.bn(wx.feelsC.roundToInt())}°" + if (old) " · পুরনো" else ""
+            wx != null -> "${wx.text} · ${Fmt.bn(wx.tempC.roundToInt())}°" + if (old) " · পুরনো" else ""
             !hasKey -> "আবহাওয়ার কী নেই"
             loading -> "আবহাওয়া আনা হচ্ছে…"
             else -> "আবহাওয়া নেই · চাপুন"
         }
         Row(
             Modifier.widthIn(max = 210.dp).clip(CircleShape).background(Color.White.copy(alpha = .75f)).border(1.dp, Color.White, CircleShape)
-                .padding(start = 8.dp, end = 10.dp, top = 1.dp, bottom = 1.dp),
+                .padding(start = 6.dp, end = 8.dp, top = 1.dp, bottom = 1.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Ico(if (wx?.code == 1000) Ic.sun else Ic.cloud, Modifier.graphicsLayer { translationX = bob; translationY = -bob * .7f }, size = 16.dp, tint = Sky700)
+            Ico(if (wx?.code == 1000) Ic.sun else Ic.cloud, Modifier.graphicsLayer { translationX = bob; translationY = -bob * .7f }, size = 14.dp, tint = Sky700)
             Text(" $label", fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, color = navy, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
     }
